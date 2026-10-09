@@ -1,0 +1,45 @@
+# ----- Credentials / environment -----
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+
+# ----- Object storage / local data (never commit datasets) -----
+.local/
+data/
+backups/
+
+# ----- Python / uv -----
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ----- Notebook / exploratory analysis -----
+.ipynb_checkpoints/
+
+# ----- DuckDB, SQLite, Dagster local metadata -----
+*.duckdb
+*.duckdb.wal
+*.sqlite
+*.sqlite3
+*.db
+
+# ----- dbt build output -----
+target/
+dbt_packages/
+logs/
+
+# ----- IDE / OS -----
+.DS_Store
+.idea/
+.vscode/
+*.swp
