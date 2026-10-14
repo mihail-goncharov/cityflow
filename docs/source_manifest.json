@@ -2,7 +2,7 @@
   "source": "nyc_tlc_yellow",
   "source_month": "2025-01",
   "url": "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-01.parquet",
-  "retrieved_at": "2026-10-07T05:35:52.325633+00:00",
+  "manifest_created_at": "2026-10-14T09:00:48.005467+00:00",
   "size_bytes": 59158238,
   "sha256": "9af277e4c0d3f9deb30644da822981e1e7df6af58313170fd3aa8a474485488a"
 }

@@ -21,7 +21,7 @@ The project uses January to March 2025.
 
 **File identity:** size, SHA-256 and retrieval date are recorded in
 [`source_manifest.json`](source_manifest.json). The file was downloaded on
-2026-10-05; `retrieved_at` in the manifest is the time the manifest was built.
+2026-10-05; `manifest_created_at` in the manifest is the time the manifest was built.
 
 **Notes:**
 - From 2025, the files include a new column, `cbd_congestion_fee`.
