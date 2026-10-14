@@ -7,6 +7,34 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RAW_FILE = PROJECT_ROOT / "data" / "raw" / "yellow_tripdata_2025-01.parquet"
 TAXI_ZONE = PROJECT_ROOT / "data" / "raw" / "taxi_zone_lookup.csv"
 
+MAX_DISTANCE_MILES = 200
+MAX_DURATION = pl.duration(hours=5)
+MAX_FARE = 1000
+
+
+def show_examples(df: pl.DataFrame, condition: pl.Expr, columns: list[str], limit: int = 5) -> None:
+    print(df.filter(condition).select(columns).head(limit))
+
+
+def quality_rules() -> dict[str, pl.Expr]:
+    pickup = pl.col("tpep_pickup_datetime")
+    dropoff = pl.col("tpep_dropoff_datetime")
+    return {
+        "zero_or_negative_fare": pl.col("fare_amount") <= 0,
+        "zero_distance": pl.col("trip_distance") <= 0,
+        "unknown_location": pl.col("PULocationID").is_in([264, 265]) | pl.col("DOLocationID").is_in([264, 265]),
+        "dropoff_before_pickup": pickup > dropoff,
+        "outside_january": (pickup < datetime(2025, 1, 1)) | (pickup >= datetime(2025, 2, 1)),
+        "zero_duration_with_distance": (pickup == dropoff) & (pl.col("trip_distance") > 0),
+        "extreme_distance": pl.col("trip_distance") > MAX_DISTANCE_MILES,
+        "long_duration": (dropoff - pickup) > MAX_DURATION,
+        "missing_passenger": pl.col("passenger_count").is_null(),
+        "extreme_fare": pl.col("fare_amount") > MAX_FARE,
+    }
+
+REJECT_RULES = ["zero_or_negative_fare", "zero_distance", "dropoff_before_pickup", "outside_january",
+    "zero_duration_with_distance", "extreme_distance", "long_duration", "extreme_fare",]
+
 
 def profile(df: pl.DataFrame) -> None:
     print("Profile\n")
@@ -33,81 +61,60 @@ def profile(df: pl.DataFrame) -> None:
 
 
 def quality_checks(df: pl.DataFrame) -> None:
+    rules = quality_rules()
+
     print("Quality Checks\n")
     # 1. Negative fare
-    negative_fare = df.filter(df["fare_amount"] <= 0)
-    print("Zero or negative fare: ", negative_fare.height)
-    print(negative_fare.select("total_amount", "fare_amount", "payment_type", "VendorID").sample(5, seed=42))
+    print("Zero or negative fare: ", df.filter(rules["zero_or_negative_fare"]).height)
+    show_examples(df=df, condition=rules["zero_or_negative_fare"],
+                  columns=["total_amount", "fare_amount", "payment_type", "VendorID"])
+
 
     # 2. Zero trip distance
-    zero_distance = df.filter(df["trip_distance"] <= 0)
-    print("Number of Zero trip distance: ", zero_distance.height)
-    print(zero_distance.select("trip_distance", "fare_amount", "tpep_pickup_datetime", "tpep_dropoff_datetime",
-                               "RatecodeID").sample(5, seed=42))
+    print("Number of Zero trip distance: ", df.filter(rules["zero_distance"]).height)
+    show_examples(df=df, condition=rules["zero_distance"], columns=["trip_distance", "fare_amount",
+                                                        "tpep_pickup_datetime", "tpep_dropoff_datetime", "RatecodeID"])
 
     # 3. Unknown location
-    unknown_location = pl.col("PULocationID").is_in([264, 265]) | pl.col("DOLocationID").is_in([264, 265])
-    print("Unknown/Outside Locations: ", df.filter(unknown_location).height)
+    print("Unknown/Outside Locations: ", df.filter(rules["unknown_location"]).height)
+    show_examples(df=df, condition=rules["unknown_location"], columns=["PULocationID", "DOLocationID", "fare_amount",
+                                                                      "VendorID"])
 
     # 4. Impossible datetime
-    pickup = pl.col("tpep_pickup_datetime")
-    dropoff = pl.col("tpep_dropoff_datetime")
     columns = ["tpep_pickup_datetime", "tpep_dropoff_datetime", "trip_distance", "fare_amount", "VendorID"]
+    print("Dropoff before pickup: ", df.filter(rules["dropoff_before_pickup"]).height)
+    show_examples(df=df, condition=rules["dropoff_before_pickup"], columns=columns)
 
-    dropoff_before_pickup = pickup > dropoff
-    outside_january = (pickup < datetime(2025, 1, 1)) | (pickup >= datetime(2025, 2, 1))
-    zero_duration_with_distance = (pickup == dropoff) & (pl.col("trip_distance") > 0)
+    print("Outside January: ", df.filter(rules["outside_january"]).height)
+    show_examples(df=df, condition=rules["outside_january"], columns=columns)
 
-    print("Dropoff before pickup: ", df.filter(dropoff_before_pickup).height)
-    print(df.filter(dropoff_before_pickup).select(columns).sample(3, seed=42))
-
-    print("Outside January: ", df.filter(outside_january).height)
-    print(df.filter(outside_january).select(columns).sample(3, seed=42))
-
-    print("Zero duration with distance: ", df.filter(zero_duration_with_distance).height)
-    print(df.filter(zero_duration_with_distance).select(columns).sample(3, seed=42))
+    print("Zero duration with distance: ", df.filter(rules["zero_duration_with_distance"]).height)
+    show_examples(df=df, condition=rules["zero_duration_with_distance"], columns=columns)
 
 
     # 5. Extreme Trip Distance
-    extreme_trip_distance_by_miles = df.filter(pl.col("trip_distance") > 200)
-    long_duration = (dropoff - pickup) > pl.duration(hours=5)
-    print("Extreme distance: ", extreme_trip_distance_by_miles.height)
-    print(extreme_trip_distance_by_miles.select(columns).sample(5, seed=42))
-    print("Long duration (>5h): ", df.filter(long_duration).height)
-    print(df.filter(long_duration).select(columns).sample(5, seed=42))
+    print("Extreme distance: ", df.filter(rules["extreme_distance"]).height)
+    show_examples(df=df, condition=rules["extreme_distance"], columns=columns)
+
+    print("Long duration (>5h): ", df.filter(rules["long_duration"]).height)
+    show_examples(df=df, condition=rules["long_duration"], columns=columns)
 
     # 6. Empty columns
-    empty_columns = pl.col("passenger_count").is_null()
+    empty_columns = rules["missing_passenger"]
     print("Empty passenger: ", df.filter(empty_columns).height)
     print("Payment type", df.filter(empty_columns)["payment_type"].value_counts())
     print("VendorID: ", df.filter(empty_columns)["VendorID"].value_counts())
-    print(df.filter(empty_columns).select("passenger_count", "RatecodeID", "store_and_fwd_flag",
-                                          "congestion_surcharge", "Airport_fee", "VendorID", "payment_type")
-          .sample(3, seed=42))
+    show_examples(df=df, condition=rules["missing_passenger"], columns=["passenger_count", "RatecodeID",
+                            "store_and_fwd_flag", "congestion_surcharge", "Airport_fee", "VendorID", "payment_type"])
+
 
     # 7. Extreme fare
-    extreme_fare = pl.col("fare_amount") > 1000
-    print("Extreme fare (> 1000): ", df.filter(extreme_fare).height)
-    print(df.filter(extreme_fare).select(columns + ["payment_type"])
-          .sort("fare_amount", descending=True))
+    print("Extreme fare (> 1000): ", df.filter(rules["extreme_fare"]).height)
+    print(df.filter(rules["extreme_fare"]).select(columns + ["payment_type"]).sort("fare_amount", descending=True))
 
 def valid_trips(df: pl.DataFrame) -> pl.DataFrame:
-    negative_fare = pl.col("fare_amount") <= 0
-    zero_distance = pl.col("trip_distance") <= 0
-
-    pickup = pl.col("tpep_pickup_datetime")
-    dropoff = pl.col("tpep_dropoff_datetime")
-
-    dropoff_before_pickup = pickup > dropoff
-    outside_january = (pickup < datetime(2025, 1, 1)) | (pickup >= datetime(2025, 2, 1))
-    zero_duration_with_distance = (pickup == dropoff) & (pl.col("trip_distance") > 0)
-    extreme_trip_distance = pl.col("trip_distance") > 200
-
-    long_duration = (dropoff - pickup) > pl.duration(hours=5)
-    extreme_fare = pl.col("fare_amount") > 1000
-
-    return df.filter(~(negative_fare | zero_distance | dropoff_before_pickup | outside_january |
-                       zero_duration_with_distance | extreme_trip_distance | long_duration | extreme_fare))
+    rules = quality_rules()
+    return df.filter(~pl.any_horizontal([rules[name] for name in REJECT_RULES]))
 
 
 def business_questions(df: pl.DataFrame) -> None:
