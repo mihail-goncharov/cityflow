@@ -1,0 +1,69 @@
+name: CityFlow CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: cityflow-ci
+    steps:
+      - name: Checkout repository
+        uses: https://code.forgejo.org/actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Repository sanity checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f README.md
+          test -d src
+          echo 'Repository structure looks good.'
+
+      - name: Python quality gates (when Python project is present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f pyproject.toml ]; then
+            echo 'Python project not added yet: skipping uv/ruff/pytest.'
+            exit 0
+          fi
+          test -f uv.lock || { echo 'Missing uv.lock: run uv lock and commit it.'; exit 1; }
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+          uv python install 3.12
+          uv sync --locked --python 3.12
+          uv run ruff check .
+          uv run pytest -q
+
+  deploy:
+    needs: ci
+    if: ${{ forgejo.event_name == 'push' && forgejo.ref == 'refs/heads/main' && vars.ENABLE_DEPLOY == 'true' }}
+    runs-on: cityflow-ci
+    steps:
+      - name: Deploy to CityFlow VM 110 over Tailscale SSH
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_SSH_PRIVATE_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          apt-get update -qq
+          apt-get install -y --no-install-recommends openssh-client >/dev/null
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519_deploy"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519_deploy" "$HOME/.ssh/known_hosts"
+          ssh -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -i "$HOME/.ssh/id_ed25519_deploy" \
+            "alex@$DEPLOY_HOST" \
+            'cd /home/alex/projects/cityflow && git fetch origin main && git merge --ff-only origin/main && bash infra/scripts/deploy.sh'

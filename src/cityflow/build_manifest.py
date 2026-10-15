@@ -1,8 +1,7 @@
-from pathlib import Path
 import hashlib
 import json
-from datetime import datetime, timezone
-
+from datetime import UTC, datetime
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RAW_FILE = PROJECT_ROOT / "data" / "raw" / "yellow_tripdata_2025-01.parquet"
@@ -26,7 +25,7 @@ def build_manifest(path: Path, year_month: str) -> dict:
         "source": "nyc_tlc_yellow",
         "source_month": year_month,
         "url": url,
-        "manifest_created_at": datetime.now(timezone.utc).isoformat(),
+        "manifest_created_at": datetime.now(UTC).isoformat(),
         "size_bytes": path.stat().st_size,
         "sha256": sha256_of(path)
     }
