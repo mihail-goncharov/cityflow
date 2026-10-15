@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta
+
 import polars as pl
+
 from cityflow.profile_data import quality_checks, valid_trips
 
 START = datetime(2025, 1, 15, 12, 0)

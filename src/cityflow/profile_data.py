@@ -1,7 +1,7 @@
-import polars as pl
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
+import polars as pl
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RAW_FILE = PROJECT_ROOT / "data" / "raw" / "yellow_tripdata_2025-01.parquet"
