@@ -26,7 +26,7 @@ def build_manifest(path: Path, year_month: str) -> dict:
         "source": "nyc_tlc_yellow",
         "source_month": year_month,
         "url": url,
-        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "manifest_created_at": datetime.now(timezone.utc).isoformat(),
         "size_bytes": path.stat().st_size,
         "sha256": sha256_of(path)
     }
