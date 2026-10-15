@@ -63,6 +63,7 @@ uv sync
 
 ### 2. Data
 
+No data is stored in repo.
 Download January 2025 into `data/raw/`.
 
 **Linux and macOS:**
