@@ -45,6 +45,19 @@ On a Pull Request to `main` it executes repository sanity checks. Python quality
 gates become mandatory once `pyproject.toml` and `uv.lock` are present (and
 Ruff + pytest are declared as project development dependencies).
 
+CI installs the `ci` dependency group and selects Polars' CPU compatibility
+runtime with `POLARS_FORCE_PKG=compat`. The runner VM may not expose the CPU
+instructions required by the standard runtime, which can cause an
+`Illegal instruction` crash during test collection. The compatibility runtime
+is provided by [`polars[rtcompat]`](https://docs.pola.rs/user-guide/installation/#legacy-cpu).
+To run the same checks locally:
+
+```bash
+uv sync --locked --python 3.13 --group ci
+uv run --no-sync ruff check .
+POLARS_FORCE_PKG=compat uv run --no-sync pytest -q
+```
+
 Until CD prerequisites below are complete, **leave ENABLE_DEPLOY unset**.
 The deploy job then skips and no SSH secret is required.
 

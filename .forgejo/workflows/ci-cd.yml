@@ -25,6 +25,8 @@ jobs:
 
       - name: Python quality gates (when Python project is present)
         shell: bash
+        env:
+          POLARS_FORCE_PKG: compat
         run: |
           set -euo pipefail
           if [ ! -f pyproject.toml ]; then
@@ -35,9 +37,9 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           export PATH="$HOME/.local/bin:$PATH"
           uv python install 3.13
-          uv sync --locked --python 3.13
-          uv run ruff check .
-          uv run pytest -q
+          uv sync --locked --python 3.13 --group ci
+          uv run --no-sync ruff check .
+          uv run --no-sync pytest -q
 
   deploy:
     needs: ci
