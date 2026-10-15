@@ -34,8 +34,8 @@ jobs:
           test -f uv.lock || { echo 'Missing uv.lock: run uv lock and commit it.'; exit 1; }
           curl -LsSf https://astral.sh/uv/install.sh | sh
           export PATH="$HOME/.local/bin:$PATH"
-          uv python install 3.12
-          uv sync --locked --python 3.12
+          uv python install 3.13
+          uv sync --locked --python 3.13
           uv run ruff check .
           uv run pytest -q
 
