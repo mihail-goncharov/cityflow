@@ -7,6 +7,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "boto3>=1.43.114",
     "polars>=1.44.2",
     "pyarrow>=25.0.1",
 ]
@@ -22,7 +23,9 @@ ci = [
     "polars[rtcompat]>=1.44.2",
 ]
 dev = [
+    "boto3-stubs[s3]>=1.43.114",
     "jupyter>=1.1.1",
+    "moto>=5.2.4",
     "mypy>=2.4.0",
     "pytest>=9.1.1",
     "ruff>=0.17.0",
