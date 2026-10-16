@@ -39,6 +39,7 @@ object storage; for local exploration it is downloaded into `data/raw/`.
 | Deployment | Docker Compose |
 | Git and CI/CD | Forgejo, Forgejo Actions |
 | Secret scanning | Gitleaks |
+| Dependency vulnerability scanning | pip-audit |
 
 ## Deployment
 
@@ -125,6 +126,27 @@ job summary above the logs (Forgejo 17+ and Runner 13.2+). The table includes
 statements, branches, missing coverage and totals. HTML/XML reports are uploaded
 as the `coverage` artifact, retained for 14 days, including when tests fail.
 Configuration lives in `pyproject.toml` and `.forgejo/workflows/ci-cd.yml`.
+
+## Python dependency audit
+
+Forgejo CI runs `pip-audit` as a separate step on PRs and pushes to `main`.
+It checks the exact versions exported from `uv.lock`, including transitive
+dependencies and the `dev`/`ci` groups, for the current Python and platform.
+Known vulnerabilities or audit errors fail CI and block deployment.
+Ruff's security rules check source code; they do not replace this dependency
+audit.
+
+Run the same audit locally:
+
+```bash
+uv sync --locked --group ci
+bash infra/scripts/audit-dependencies.sh
+```
+
+The report lists affected packages, vulnerability IDs (including CVE/GHSA
+aliases where available) and fixed versions. The audit requires HTTPS access
+to PyPI. See [`docs/ci-cd-setup.md`](docs/ci-cd-setup.md#python-dependency-audit-with-pip-audit)
+for details and remediation.
 
 ## Secret scanning
 

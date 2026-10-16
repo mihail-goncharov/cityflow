@@ -36,22 +36,34 @@ jobs:
           printf '%s\n' "$RUNNER_TEMP/gitleaks-bin" >> "$FORGEJO_PATH"
           bash infra/scripts/scan-secrets.sh changes "$SCAN_BASE" "$SCAN_HEAD"
 
-      - name: Python quality gates (when Python project is present)
+      - name: Install Python dependencies (when Python project is present)
         shell: bash
-        env:
-          POLARS_FORCE_PKG: compat
         run: |
           set -euo pipefail
           if [ ! -f pyproject.toml ]; then
-            echo 'Python project not added yet: skipping uv/ruff/mypy/pytest.'
+            echo 'Python project not added yet: skipping Python checks.'
             exit 0
           fi
           test -f uv.lock || { echo 'Missing uv.lock: run uv lock and commit it.'; exit 1; }
           curl -LsSf https://astral.sh/uv/install.sh | sh
           export PATH="$HOME/.local/bin:$PATH"
+          printf '%s\n' "$HOME/.local/bin" >> "$FORGEJO_PATH"
           uv python install 3.13
           uv lock --check --python 3.13
           uv sync --locked --python 3.13 --group ci
+
+      - name: Python dependency audit (pip-audit)
+        if: ${{ hashFiles('pyproject.toml') != '' }}
+        shell: bash
+        run: bash infra/scripts/audit-dependencies.sh
+
+      - name: Python quality gates (Ruff, mypy, pytest)
+        if: ${{ hashFiles('pyproject.toml') != '' }}
+        shell: bash
+        env:
+          POLARS_FORCE_PKG: compat
+        run: |
+          set -euo pipefail
           uv run --no-sync ruff check .
           uv run --no-sync mypy
           printf '## Coverage\n\n' >> "$FORGEJO_STEP_SUMMARY"
