@@ -44,13 +44,14 @@ Do not install a runner on the Forgejo server or Proxmox host.
 The workflow file is `.forgejo/workflows/ci-cd.yml`.
 On a Pull Request to `main` it executes repository sanity checks and Gitleaks.
 Python quality gates become mandatory once `pyproject.toml` is present (with
-Ruff, mypy, pytest and pytest-cov declared as project development dependencies).
+Ruff, mypy, pip-audit, pytest and pytest-cov declared as project development
+dependencies).
 A missing `uv.lock` fails CI.
 
 Before installing dependencies, CI runs `uv lock --check` to verify that
 `uv.lock` matches `pyproject.toml`. Installation uses `uv sync --locked`, and
-quality tools run with `uv run --no-sync` against that environment. A stale
-lockfile fails CI instead of being updated. After intentionally changing
+the audit and quality tools run with `uv run --no-sync` against that environment.
+A stale lockfile fails CI instead of being updated. After intentionally changing
 dependencies, run `uv lock` locally and commit `pyproject.toml` and `uv.lock`
 together. See [uv's lockfile checks](https://docs.astral.sh/uv/concepts/projects/sync/#checking-the-lockfile).
 
@@ -71,6 +72,7 @@ To run the same checks locally:
 ```bash
 uv lock --check --python 3.13
 uv sync --locked --python 3.13 --group ci
+bash infra/scripts/audit-dependencies.sh
 uv run --no-sync ruff check .
 uv run --no-sync mypy
 POLARS_FORCE_PKG=compat uv run --no-sync pytest -q
@@ -99,6 +101,41 @@ The workflow uses upload-artifact v3 for
 
 Until CD prerequisites below are complete, **leave ENABLE_DEPLOY unset**.
 The deploy job then skips and no SSH secret is required.
+
+## Python dependency audit with pip-audit
+
+After installing the locked dependencies, CI runs
+`bash infra/scripts/audit-dependencies.sh` in its own **Python dependency audit
+(pip-audit)** step, before Ruff, mypy and pytest. Vulnerabilities or audit errors
+fail the `ci` job, which the deploy job requires. Ruff's `S` rules inspect source
+code and do not check dependency versions for known vulnerabilities.
+
+The script uses `uv export --locked --all-groups --no-emit-project`
+to create a temporary requirements file from `uv.lock`. It includes direct and
+transitive dependencies, development tools, the auditor itself and the `ci`
+group. Environment markers select packages for the current Python version and
+platform (Python 3.13 on Linux in CI). It does not audit every platform/Python
+combination in the universal lockfile. Only the local CityFlow project is
+excluded from the export; it is not a published third-party package.
+
+`pip-audit` uses `--require-hashes --disable-pip` because uv has already resolved,
+pinned and recorded hashes for the full dependency graph. No second resolution
+or package installation is needed for the audit. `--strict` fails if a dependency
+cannot be collected or checked, so an incomplete audit is not reported as clean. The temporary
+requirements file is removed on exit and is not committed.
+
+Install tools with `uv sync --locked --group ci`, then run the same script
+locally. The report appears in the terminal/CI log with affected packages,
+vulnerability IDs, CVE/GHSA aliases where available and fixed versions.
+The runner needs outbound HTTPS access to PyPI for current advisory data.
+See the [pip-audit documentation](https://github.com/pypa/pip-audit#usage).
+
+For a finding, review the advisory and upgrade the affected dependency to a
+fixed version, using `uv lock --upgrade-package PACKAGE` where the declared
+constraints allow it. For a transitive dependency, its parent may also need
+an upgrade. Update `pyproject.toml` constraints if needed, commit the updated
+lockfile and rerun the audit and quality checks. The script does not apply
+automatic fixes or ignore vulnerabilities.
 
 ## Secret scanning with Gitleaks
 
