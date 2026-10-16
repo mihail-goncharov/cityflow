@@ -38,6 +38,7 @@ object storage; for local exploration it is downloaded into `data/raw/`.
 | Dashboard | Streamlit, Plotly |
 | Deployment | Docker Compose |
 | Git and CI/CD | Forgejo, Forgejo Actions |
+| Shell script checks | ShellCheck |
 | Secret scanning | Gitleaks |
 | Dependency vulnerability scanning | pip-audit |
 
@@ -126,6 +127,22 @@ job summary above the logs (Forgejo 17+ and Runner 13.2+). The table includes
 statements, branches, missing coverage and totals. HTML/XML reports are uploaded
 as the `coverage` artifact, retained for 14 days, including when tests fail.
 Configuration lives in `pyproject.toml` and `.forgejo/workflows/ci-cd.yml`.
+
+## Shell script checks
+
+Forgejo CI runs ShellCheck on PRs and pushes to `main`, checking all
+`infra/scripts/*.sh` files, including `deploy.sh`. Findings fail CI and block
+deployment.
+
+Install ShellCheck with `brew install shellcheck` on macOS or
+`sudo apt-get install shellcheck` on Debian/Ubuntu, then run from the project root:
+
+```bash
+shellcheck --severity=style infra/scripts/*.sh
+```
+
+See [`docs/ci-cd-setup.md`](docs/ci-cd-setup.md#shell-script-checks-with-shellcheck)
+for the CI setup and scope.
 
 ## Python dependency audit
 
