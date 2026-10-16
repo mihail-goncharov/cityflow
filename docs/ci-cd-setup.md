@@ -42,7 +42,8 @@ Do not install a runner on the Forgejo server or Proxmox host.
 ## First run (CI only)
 
 The workflow file is `.forgejo/workflows/ci-cd.yml`.
-On a Pull Request to `main` it executes repository sanity checks and Gitleaks.
+On a Pull Request to `main` or a push to `main`, it executes repository sanity
+checks, ShellCheck and Gitleaks.
 Python quality gates become mandatory once `pyproject.toml` is present (with
 Ruff, mypy, pip-audit, pytest and pytest-cov declared as project development
 dependencies).
@@ -101,6 +102,36 @@ The workflow uses upload-artifact v3 for
 
 Until CD prerequisites below are complete, **leave ENABLE_DEPLOY unset**.
 The deploy job then skips and no SSH secret is required.
+
+## Shell script checks with ShellCheck
+
+The **Shell script checks (ShellCheck)** step runs before Gitleaks and Python
+dependency installation. It installs ShellCheck from the Debian repositories
+inside the `node:22-bookworm` job container and prints the version in the log.
+The runner needs access to the Debian package mirrors; no Docker socket or
+Python environment is needed for this check.
+
+CI checks all `infra/scripts/*.sh` files, including `deploy.sh` and the audit
+and secret-scanning helpers. New `.sh` files directly in that directory are
+included automatically. ShellCheck reads each file's shebang to select the
+shell dialect and checks quoting, variable use, conditions and shell syntax.
+`--severity=style` includes every standard severity (error, warning, info and
+style); no rules are excluded. Findings or installation errors fail the `ci`
+job, so the dependent `deploy` job cannot run. The scripts are analyzed without
+executing them or connecting to VM 110.
+
+Install locally with `brew install shellcheck` (macOS) or
+`sudo apt-get install shellcheck` (Debian/Ubuntu). From the repository root, run
+the same command as CI:
+
+```bash
+shellcheck --severity=style infra/scripts/*.sh
+```
+
+Findings include the file, line and an `SC` rule number with an explanation.
+Fix the reported issue and rerun the command. See the
+[ShellCheck documentation](https://github.com/koalaman/shellcheck#how-to-use)
+for usage and rule details.
 
 ## Python dependency audit with pip-audit
 
