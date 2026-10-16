@@ -42,6 +42,17 @@ jobs:
           uv run --no-sync mypy
           uv run --no-sync pytest -q
 
+      - name: Upload coverage reports
+        if: ${{ always() }}
+        uses: https://code.forgejo.org/actions/upload-artifact@v3
+        with:
+          name: coverage
+          path: |
+            coverage.xml
+            htmlcov/
+          if-no-files-found: warn
+          retention-days: 14
+
   deploy:
     needs: ci
     if: ${{ forgejo.event_name == 'push' && forgejo.ref == 'refs/heads/main' && vars.ENABLE_DEPLOY == 'true' }}

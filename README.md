@@ -95,6 +95,28 @@ questions:
 uv run python src/cityflow/profile_data.py
 ```
 
+## Tests and coverage
+
+Install development dependencies with `uv sync --locked`, then run:
+
+```bash
+uv run pytest -q
+```
+
+Tests use small synthetic datasets and temporary files; downloaded taxi data
+and external services are not required. They cover quality rule boundaries,
+missing values, trip filtering and schema preservation, numeric formatting,
+business aggregates, empty inputs, and source manifest metadata and SHA-256.
+
+Pytest-cov measures statement and branch coverage for the entire `cityflow`
+package. Each run prints missing lines and saves `htmlcov/index.html` (browsable
+report) and `coverage.xml` (machine-readable report). A combined coverage score
+below 80% fails the run. Generated reports are ignored by Git.
+
+Forgejo CI runs the same tests and uploads HTML/XML reports as the `coverage`
+artifact, retained for 14 days, including when tests fail. Configuration lives
+in `pyproject.toml` and `.forgejo/workflows/ci-cd.yml`.
+
 ## Initial findings (January 2025)
 
 **Data quality**

@@ -43,7 +43,7 @@ Do not install a runner on the Forgejo server or Proxmox host.
 The workflow file is `.forgejo/workflows/ci-cd.yml`.
 On a Pull Request to `main` it executes repository sanity checks. Python quality
 gates become mandatory once `pyproject.toml` and `uv.lock` are present (and
-Ruff, mypy and pytest are declared as project development dependencies).
+Ruff, mypy, pytest and pytest-cov are declared as project development dependencies).
 
 Ruff keeps its default checks and adds the flake8-bandit security rules (`S`);
 only `S101` is disabled for pytest assertions under `tests/`. Mypy checks
@@ -65,6 +65,19 @@ uv run --no-sync ruff check .
 uv run --no-sync mypy
 POLARS_FORCE_PKG=compat uv run --no-sync pytest -q
 ```
+
+Pytest reads its coverage options from `pyproject.toml`: it measures statements
+and branches across `cityflow`, prints missing lines, and requires at least 80%
+combined coverage. It saves `coverage.xml` and the HTML report in `htmlcov/`.
+Tests use synthetic data and temporary files, so no raw dataset is needed.
+
+The final CI step uploads both reports as the `coverage` artifact with 14-day
+retention. `always()` preserves reports after test failures too; if an earlier
+installation or lint step fails before pytest runs, no reports are available
+and the upload step emits a warning. Download the artifact from the workflow
+run page and open `htmlcov/index.html` to inspect uncovered lines and branches.
+The workflow uses upload-artifact v3 for
+[Forgejo compatibility](https://forgejo.org/docs/latest/user/actions/advanced-features/#artifacts).
 
 Until CD prerequisites below are complete, **leave ENABLE_DEPLOY unset**.
 The deploy job then skips and no SSH secret is required.

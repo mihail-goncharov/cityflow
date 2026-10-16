@@ -22,6 +22,7 @@ __pycache__/
 .coverage
 .coverage.*
 htmlcov/
+coverage.xml
 
 # ----- Notebook / exploratory analysis -----
 .ipynb_checkpoints/
