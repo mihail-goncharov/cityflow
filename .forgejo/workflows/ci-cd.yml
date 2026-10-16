@@ -40,7 +40,9 @@ jobs:
           uv sync --locked --python 3.13 --group ci
           uv run --no-sync ruff check .
           uv run --no-sync mypy
-          uv run --no-sync pytest -q
+          printf '## Coverage\n\n' >> "$FORGEJO_STEP_SUMMARY"
+          uv run --no-sync pytest -q \
+            --cov-report="markdown-append:$FORGEJO_STEP_SUMMARY"
 
       - name: Upload coverage reports
         if: ${{ always() }}

@@ -1,6 +1,7 @@
 # CityFlow CI/CD setup
 
-This is a starter, not an already deployed runner. It targets Forgejo 16, a dedicated CI Runner VM 111, and a separate CityFlow VM 110.
+This setup targets Forgejo 17.0 and Runner 13.2, a dedicated CI Runner VM 111,
+and a separate CityFlow VM 110.
 
 ## Prerequisites
 
@@ -11,7 +12,7 @@ This is a starter, not an already deployed runner. It targets Forgejo 16, a dedi
 - Runner capacity: `1`; job containers must **not** receive `/var/run/docker.sock`.
 - Runner VM can reach `https://forgejo.tailfe5b25.ts.net/`.
 
-## Runner registration on Forgejo 16
+## Runner registration on Forgejo 17
 
 Open repository Settings > Actions > Runners > Create new runner.
 Record the UUID and TOKEN **privately**. Generate a runner configuration with
@@ -70,6 +71,14 @@ Pytest reads its coverage options from `pyproject.toml`: it measures statements
 and branches across `cityflow`, prints missing lines, and requires at least 80%
 combined coverage. It saves `coverage.xml` and the HTML report in `htmlcov/`.
 Tests use synthetic data and temporary files, so no raw dataset is needed.
+
+In CI, pytest also appends a Markdown coverage table to `FORGEJO_STEP_SUMMARY`.
+Open the `ci` job in a workflow run to see the **Coverage** summary above its
+logs, with a row for each file and totals for statements, branches and missing
+coverage. This requires Forgejo 17+ and Runner 13.2+. The table is generated
+when tests finish, including ordinary test failures or a failed coverage
+threshold; failures before pytest starts do not produce a coverage table.
+See [Forgejo job summaries](https://forgejo.org/docs/v17.0/user/actions/advanced-features/#job-summaries).
 
 The final CI step uploads both reports as the `coverage` artifact with 14-day
 retention. `always()` preserves reports after test failures too; if an earlier

@@ -113,9 +113,11 @@ package. Each run prints missing lines and saves `htmlcov/index.html` (browsable
 report) and `coverage.xml` (machine-readable report). A combined coverage score
 below 80% fails the run. Generated reports are ignored by Git.
 
-Forgejo CI runs the same tests and uploads HTML/XML reports as the `coverage`
-artifact, retained for 14 days, including when tests fail. Configuration lives
-in `pyproject.toml` and `.forgejo/workflows/ci-cd.yml`.
+Forgejo CI runs the same tests and displays a per-file coverage table in the
+job summary above the logs (Forgejo 17+ and Runner 13.2+). The table includes
+statements, branches, missing coverage and totals. HTML/XML reports are uploaded
+as the `coverage` artifact, retained for 14 days, including when tests fail.
+Configuration lives in `pyproject.toml` and `.forgejo/workflows/ci-cd.yml`.
 
 ## Initial findings (January 2025)
 
