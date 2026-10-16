@@ -43,9 +43,16 @@ Do not install a runner on the Forgejo server or Proxmox host.
 
 The workflow file is `.forgejo/workflows/ci-cd.yml`.
 On a Pull Request to `main` it executes repository sanity checks and Gitleaks.
-Python quality gates become mandatory once `pyproject.toml` and `uv.lock` are
-present (and Ruff, mypy, pytest and pytest-cov are declared as project development
-dependencies).
+Python quality gates become mandatory once `pyproject.toml` is present (with
+Ruff, mypy, pytest and pytest-cov declared as project development dependencies).
+A missing `uv.lock` fails CI.
+
+Before installing dependencies, CI runs `uv lock --check` to verify that
+`uv.lock` matches `pyproject.toml`. Installation uses `uv sync --locked`, and
+quality tools run with `uv run --no-sync` against that environment. A stale
+lockfile fails CI instead of being updated. After intentionally changing
+dependencies, run `uv lock` locally and commit `pyproject.toml` and `uv.lock`
+together. See [uv's lockfile checks](https://docs.astral.sh/uv/concepts/projects/sync/#checking-the-lockfile).
 
 Ruff keeps its default checks and adds the flake8-bandit security rules (`S`);
 only `S101` is disabled for pytest assertions under `tests/`. Mypy checks
@@ -62,6 +69,7 @@ is provided by [`polars[rtcompat]`](https://docs.pola.rs/user-guide/installation
 To run the same checks locally:
 
 ```bash
+uv lock --check --python 3.13
 uv sync --locked --python 3.13 --group ci
 uv run --no-sync ruff check .
 uv run --no-sync mypy

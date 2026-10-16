@@ -42,8 +42,15 @@ Do not install a runner on the Forgejo server or Proxmox host.
 
 The workflow file is `.forgejo/workflows/ci-cd.yml`.
 On a Pull Request to `main` it executes repository sanity checks. Python quality
-gates become mandatory once `pyproject.toml` and `uv.lock` are present (and
-Ruff + pytest are declared as project development dependencies).
+gates become mandatory once `pyproject.toml` is present (with Ruff and pytest
+declared as project development dependencies). A missing `uv.lock` fails CI.
+
+Before installing dependencies, CI runs `uv lock --check` to verify that
+`uv.lock` matches `pyproject.toml`. Installation uses `uv sync --locked`, and
+quality tools run with `uv run --no-sync` against that environment. A stale
+lockfile fails CI instead of being updated. After intentionally changing
+dependencies, run `uv lock` locally and commit `pyproject.toml` and `uv.lock`
+together. See [uv's lockfile checks](https://docs.astral.sh/uv/concepts/projects/sync/#checking-the-lockfile).
 
 Until CD prerequisites below are complete, **leave ENABLE_DEPLOY unset**.
 The deploy job then skips and no SSH secret is required.

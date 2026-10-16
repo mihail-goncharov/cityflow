@@ -35,9 +35,10 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           export PATH="$HOME/.local/bin:$PATH"
           uv python install 3.12
+          uv lock --check --python 3.12
           uv sync --locked --python 3.12
-          uv run ruff check .
-          uv run pytest -q
+          uv run --no-sync ruff check .
+          uv run --no-sync pytest -q
 
   deploy:
     needs: ci
