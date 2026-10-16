@@ -43,7 +43,14 @@ Do not install a runner on the Forgejo server or Proxmox host.
 The workflow file is `.forgejo/workflows/ci-cd.yml`.
 On a Pull Request to `main` it executes repository sanity checks. Python quality
 gates become mandatory once `pyproject.toml` and `uv.lock` are present (and
-Ruff + pytest are declared as project development dependencies).
+Ruff, mypy and pytest are declared as project development dependencies).
+
+Ruff keeps its default checks and adds the flake8-bandit security rules (`S`);
+only `S101` is disabled for pytest assertions under `tests/`. Mypy checks
+`src/cityflow`, including the bodies of functions without annotations. It detects
+incompatible argument and return types, unhandled `None` and invalid interface
+usage where type information is available. Notebooks are outside the initial
+type-checking scope. Both tools read their configuration from `pyproject.toml`.
 
 CI installs the `ci` dependency group and selects Polars' CPU compatibility
 runtime with `POLARS_FORCE_PKG=compat`. The runner VM may not expose the CPU
@@ -55,6 +62,7 @@ To run the same checks locally:
 ```bash
 uv sync --locked --python 3.13 --group ci
 uv run --no-sync ruff check .
+uv run --no-sync mypy
 POLARS_FORCE_PKG=compat uv run --no-sync pytest -q
 ```
 

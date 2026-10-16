@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 
 import polars as pl
@@ -10,6 +11,15 @@ TAXI_ZONE = PROJECT_ROOT / "data" / "raw" / "taxi_zone_lookup.csv"
 MAX_DISTANCE_MILES = 200
 MAX_DURATION = pl.duration(hours=5)
 MAX_FARE = 1000
+
+
+def _format_numeric(value: object, spec: str = "") -> str:
+    """Format a numeric Polars aggregate, including an empty/all-null result."""
+    if value is None:
+        return "N/A"
+    if not isinstance(value, (int, float, Decimal)):
+        raise TypeError(f"Expected a numeric aggregate, got {type(value).__name__}")
+    return format(value, spec)
 
 
 def show_examples(df: pl.DataFrame, condition: pl.Expr, columns: list[str], limit: int = 5) -> None:
@@ -51,10 +61,10 @@ def profile(df: pl.DataFrame) -> None:
     nulls_and_pct = nulls.with_columns((pl.col("null_count") / df.height * 100).round(2).alias("null_pct"))
     print("Numbers of null elements: ", nulls_and_pct)
     print("Number of unique Pickup Locations:", df["PULocationID"].n_unique())
-    print(f"Average trip_distance: {df['trip_distance'].mean():.2f} miles")
-    print(f"Average fare_amount: {df['fare_amount'].mean():.2f}")
-    print(f"Min fare_amount: {df['fare_amount'].min()}")
-    print(f"Max fare_amount: {df['fare_amount'].max():,}")
+    print(f"Average trip_distance: {_format_numeric(df['trip_distance'].mean(), '.2f')} miles")
+    print(f"Average fare_amount: {_format_numeric(df['fare_amount'].mean(), '.2f')}")
+    print(f"Min fare_amount: {_format_numeric(df['fare_amount'].min())}")
+    print(f"Max fare_amount: {_format_numeric(df['fare_amount'].max(), ',')}")
     print("Number of rows with trip_distance <= 0: ", (df["trip_distance"] <= 0).sum())
     print("Number of rows with fare_amount <= 0: ", (df["fare_amount"] <= 0).sum())
     print("Number of rows with pickup time after dropoff time: ", (df["tpep_pickup_datetime"] > df["tpep_dropoff_datetime"]).sum())
@@ -129,15 +139,15 @@ def business_questions(df: pl.DataFrame) -> None:
 
     # 3. Average fare per trip
     avg_fare = df["fare_amount"].mean()
-    print(f"Average fare per trip: {avg_fare:.2f}")
+    print(f"Average fare per trip: {_format_numeric(avg_fare, '.2f')}")
 
     # 4. Average distance
     avg_distance = df["trip_distance"].mean()
-    print(f"Average distance: {avg_distance:.2f}")
+    print(f"Average distance: {_format_numeric(avg_distance, '.2f')}")
 
     # 5. Average duration
     avg_duration = (df["tpep_dropoff_datetime"] - df["tpep_pickup_datetime"]).mean()
-    print(f"Average duration: {avg_duration}")
+    print("Average duration:", avg_duration)
 
 
 

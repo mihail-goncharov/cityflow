@@ -23,6 +23,22 @@ ci = [
 ]
 dev = [
     "jupyter>=1.1.1",
+    "mypy>=2.4.0",
     "pytest>=9.1.1",
     "ruff>=0.17.0",
 ]
+
+[tool.ruff.lint]
+# Add flake8-bandit security checks while retaining Ruff's default rules.
+extend-select = ["S"]
+
+[tool.ruff.lint.per-file-ignores]
+# Pytest tests use assert statements for their checks.
+"tests/**/*.py" = ["S101"]
+
+[tool.mypy]
+python_version = "3.13"
+files = ["src/cityflow"]
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
