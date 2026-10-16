@@ -59,8 +59,14 @@ object storage; for local exploration it is downloaded into `data/raw/`.
 Clone the repository and create the environment from the project folder:
 
 ```
-uv sync
+uv sync --locked
 ```
+
+Check that `uv.lock` matches `pyproject.toml` with `uv lock --check`.
+After intentionally changing dependencies in `pyproject.toml`, run `uv lock`
+locally and commit both files together. CI checks the lockfile and installs
+dependencies with `uv sync --locked`; it fails if the lockfile is missing or
+outdated instead of updating it.
 
 ### 2. Data
 
@@ -93,7 +99,7 @@ From the project root, run the profiling, data quality checks and business
 questions:
 
 ```
-uv run python src/cityflow/profile_data.py
+uv run --locked python src/cityflow/profile_data.py
 ```
 
 ## Tests and coverage
