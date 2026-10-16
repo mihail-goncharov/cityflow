@@ -39,6 +39,7 @@ object storage; for local exploration it is downloaded into `data/raw/`.
 | Deployment | Docker Compose |
 | Git and CI/CD | Forgejo, Forgejo Actions |
 | Shell script checks | ShellCheck |
+| Compose configuration checks | Docker Compose CLI |
 | Secret scanning | Gitleaks |
 | Dependency vulnerability scanning | pip-audit |
 
@@ -143,6 +144,26 @@ shellcheck --severity=style infra/scripts/*.sh
 
 See [`docs/ci-cd-setup.md`](docs/ci-cd-setup.md#shell-script-checks-with-shellcheck)
 for the CI setup and scope.
+
+## Compose configuration checks
+
+Forgejo CI validates `compose.yaml` on PRs and pushes to `main` using the
+Docker Compose CLI's `config --quiet` command. Invalid configuration fails CI
+and blocks deployment. Run the same check locally with Docker CLI and the
+Compose plugin installed:
+
+```bash
+bash infra/scripts/check-compose.sh
+```
+
+The script supplies test values for all project variables, ignores the local
+`.env`, inherited application variables and Compose overrides, and does not
+print the resolved configuration. No real secrets or running Docker daemon
+are required. This validates configuration only; it does not guarantee that
+images can be pulled, containers start, or services become healthy.
+
+See [`docs/ci-cd-setup.md`](docs/ci-cd-setup.md#compose-configuration-checks-with-docker-compose-cli)
+for installation and check scope.
 
 ## Python dependency audit
 

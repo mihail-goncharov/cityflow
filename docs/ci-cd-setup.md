@@ -43,7 +43,7 @@ Do not install a runner on the Forgejo server or Proxmox host.
 
 The workflow file is `.forgejo/workflows/ci-cd.yml`.
 On a Pull Request to `main` or a push to `main`, it executes repository sanity
-checks, ShellCheck and Gitleaks.
+checks, ShellCheck, Gitleaks and Docker Compose configuration validation.
 Python quality gates become mandatory once `pyproject.toml` is present (with
 Ruff, mypy, pip-audit, pytest and pytest-cov declared as project development
 dependencies).
@@ -132,6 +132,44 @@ Findings include the file, line and an `SC` rule number with an explanation.
 Fix the reported issue and rerun the command. See the
 [ShellCheck documentation](https://github.com/koalaman/shellcheck#how-to-use)
 for usage and rule details.
+
+## Compose configuration checks with Docker Compose CLI
+
+The **Compose configuration check (Docker Compose CLI)** step runs after
+Gitleaks and before Python dependency installation on PRs and pushes to `main`.
+It installs `docker-ce-cli` and `docker-compose-plugin` from Docker's signed
+Debian Bookworm apt repository in the `node:22-bookworm` job container, without
+the Docker Engine. The runner needs HTTPS access to `download.docker.com` and
+access to Debian package mirrors. The Compose version is printed in the log.
+See [Docker's apt repository setup](https://docs.docker.com/engine/install/debian/#install-using-the-apt-repository).
+
+CI then runs `bash infra/scripts/check-compose.sh`. The script validates the
+repository's explicit `compose.yaml` with all profiles enabled using
+[`docker compose config --quiet`](https://docs.docker.com/reference/cli/docker/compose/config/).
+It supplies fixed test values for every current project variable, including
+non-secret `<compose-check-access-key>` and `<compose-check-secret-key>`
+placeholders. It clears the inherited environment except `PATH` and `HOME`
+(needed for CLI/plugin discovery), uses `--env-file /dev/null` to bypass the
+local `.env`, and selects an explicit file and project name to avoid local
+overrides. Keep these fixtures up to date when adding Compose variables.
+
+No Forgejo Secrets, Docker daemon, Docker socket or application data are needed.
+The resolved configuration is not printed. Installation or validation errors
+fail the `ci` job and block the dependent deploy job. The check covers parsing,
+variable interpolation and Compose model consistency; it does **not** pull
+images, build or start containers, check host permissions or port availability,
+or guarantee service readiness. Deployment still validates the real runtime
+configuration separately on VM 110.
+
+With Docker CLI and the Compose plugin installed locally, run:
+
+```bash
+bash infra/scripts/check-compose.sh
+```
+
+Docker Desktop includes these tools on macOS. On Linux, use the
+[Compose plugin installation instructions](https://docs.docker.com/compose/install/linux/).
+For this configuration check, the Docker daemon can remain stopped.
 
 ## Python dependency audit with pip-audit
 
