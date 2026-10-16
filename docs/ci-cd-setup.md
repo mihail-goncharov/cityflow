@@ -42,9 +42,10 @@ Do not install a runner on the Forgejo server or Proxmox host.
 ## First run (CI only)
 
 The workflow file is `.forgejo/workflows/ci-cd.yml`.
-On a Pull Request to `main` it executes repository sanity checks. Python quality
-gates become mandatory once `pyproject.toml` and `uv.lock` are present (and
-Ruff, mypy, pytest and pytest-cov are declared as project development dependencies).
+On a Pull Request to `main` it executes repository sanity checks and Gitleaks.
+Python quality gates become mandatory once `pyproject.toml` and `uv.lock` are
+present (and Ruff, mypy, pytest and pytest-cov are declared as project development
+dependencies).
 
 Ruff keeps its default checks and adds the flake8-bandit security rules (`S`);
 only `S101` is disabled for pytest assertions under `tests/`. Mypy checks
@@ -90,6 +91,79 @@ The workflow uses upload-artifact v3 for
 
 Until CD prerequisites below are complete, **leave ENABLE_DEPLOY unset**.
 The deploy job then skips and no SSH secret is required.
+
+## Secret scanning with Gitleaks
+
+The main CI job checks all commits introduced by a PR (`base..head`) or a push
+to `main` (`before..after`), before installing Python dependencies. It scans
+commit patches, so adding a secret and removing it in a later commit still
+fails CI. Merge resolutions are included. The deploy job already requires
+this CI job, so a finding or scanner/install error blocks deployment.
+
+Both workflows fetch full history (`fetch-depth: 0`). If a push has no base
+commit (for example, a new branch or an unavailable commit after a force push),
+the scan falls back to all fetched history. Shallow clones fail explicitly
+rather than returning an incomplete clean result.
+
+`.forgejo/workflows/gitleaks-history.yml` scans all fetched branches and tags
+every Monday at 06:00 in `Europe/Chisinau`, and supports **Run workflow** in
+Forgejo Actions. The schedule is registered only after the workflow reaches
+the default branch; see the [Forgejo schedule reference](https://forgejo.org/docs/v17.0/user/actions/reference/#onschedule).
+Unreachable commits and deleted remote refs are outside the fetched history.
+
+`infra/scripts/install-gitleaks.sh` pins **Gitleaks 8.30.1** and verifies the
+archive against a checked-in SHA-256 before extraction. It supports Linux and
+macOS on x64/ARM64 and needs no Docker socket, root installation or license
+secret. The runner needs HTTPS access to GitHub release downloads. When
+upgrading, update the version and all four checksums from the
+[official release](https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1).
+
+`.gitleaks.toml` extends the [built-in Gitleaks rules](https://github.com/gitleaks/gitleaks/tree/v8.30.1/config)
+for private keys and provider/generic API tokens. Extra rules catch literal
+password assignments and `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY` assignments
+without an entropy threshold. Empty values, `${VARIABLE}` / `${{ secrets.NAME }}`
+references and `<placeholder>` values do not match these project rules. The
+only project allowlist is the exact commented `cityflow-local` username example
+in `.env.example` (formerly `env.example`), including its historical commits.
+The rest of that file is still scanned. Gitleaks detects patterns, so a clean
+scan is not proof that no secret exists.
+
+### Local scans
+
+Install the pinned version from the repository root, keeping it outside Git:
+
+```bash
+bash infra/scripts/install-gitleaks.sh "$PWD/.local/bin"
+export PATH="$PWD/.local/bin:$PATH"
+
+# Check the index after git add, before committing.
+bash infra/scripts/scan-secrets.sh staged
+
+# Check all commits introduced by the current branch.
+bash infra/scripts/scan-secrets.sh changes main HEAD
+
+# Fetch current remote refs, then check all available history.
+git fetch --all --tags --prune
+bash infra/scripts/scan-secrets.sh history
+```
+
+For a shallow clone, first run `git fetch --unshallow --tags`. Local staged
+scans check only the index and do not require full history. No Git hook is
+installed automatically.
+
+`uv run pytest -q` also runs integration checks against temporary Git repos
+when Gitleaks is on `PATH` (otherwise those checks are skipped). CI installs
+Gitleaks first, so these checks run there. They cover built-in token/SSH rules,
+project credentials, redaction, safe templates, deleted secrets, merge
+resolutions, other branches, missing base commits and shallow-clone failures.
+
+All scan modes use `--redact=100`; logs show the rule, file, line and commit
+without printing the secret value. No secret report is uploaded as an artifact.
+If a real secret is found, revoke or rotate it first, remove the literal from
+code, and use local environment variables or Forgejo Secrets. Deleting the
+current file does not remove the secret from Git history. For a verified false
+positive, add a narrowly scoped rule-specific allowlist with a reason; do not
+exclude whole configuration files or baseline all existing findings.
 
 ## Enable deployment later
 
