@@ -38,6 +38,7 @@ object storage; for local exploration it is downloaded into `data/raw/`.
 | Dashboard | Streamlit, Plotly |
 | Deployment | Docker Compose |
 | Git and CI/CD | Forgejo, Forgejo Actions |
+| Secret scanning | Gitleaks |
 
 ## Deployment
 
@@ -118,6 +119,21 @@ job summary above the logs (Forgejo 17+ and Runner 13.2+). The table includes
 statements, branches, missing coverage and totals. HTML/XML reports are uploaded
 as the `coverage` artifact, retained for 14 days, including when tests fail.
 Configuration lives in `pyproject.toml` and `.forgejo/workflows/ci-cd.yml`.
+
+## Secret scanning
+
+Forgejo CI runs Gitleaks on every commit introduced by a PR to `main` or a push
+to `main`. Findings fail CI and block the deploy job. Built-in rules detect
+private SSH keys and provider/API tokens; project rules also detect hardcoded
+passwords and RustFS access/secret keys, including weak credentials.
+
+The `Gitleaks history` workflow scans all fetched branches and tags every
+Monday at 06:00 (`Europe/Chisinau`) and can also be run manually in Actions.
+The schedule becomes active once the workflow is merged into the default
+branch. Secret values are redacted in logs.
+
+For local installation and scans before committing, see
+[`docs/ci-cd-setup.md`](docs/ci-cd-setup.md#secret-scanning-with-gitleaks).
 
 ## Initial findings (January 2025)
 
