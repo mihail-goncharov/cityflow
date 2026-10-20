@@ -95,6 +95,28 @@ questions:
 uv run python src/cityflow/profile_data.py
 ```
 
+### 4. Object storage (RustFS)
+
+Copy `.env.example` to `.env` and fill in `S3_ACCESS_KEY` and `S3_SECRET_KEY`
+with your keys from the RustFS admin. Never commit `.env`.
+
+RustFS on the dev VM is reachable only through an SSH tunnel. Port 9000 is the
+S3 API; port 9001 is the web UI at http://127.0.0.1:9001 (log in with the same
+keys):
+
+```
+ssh -L 9000:127.0.0.1:9000 -L 9001:127.0.0.1:9001 <user>@cityflow-dev
+```
+
+### 5. Tests
+
+```
+uv run pytest
+```
+
+The S3 adapter tests use moto (an in-memory fake S3), so they need no RustFS or
+credentials.
+
 ## Initial findings (January 2025)
 
 **Data quality**
