@@ -118,6 +118,13 @@ keys):
 ssh -L 9000:127.0.0.1:9000 -L 9001:127.0.0.1:9001 <user>@cityflow-dev
 ```
 
+`.env` is not loaded automatically. Pass it to every command that uses the S3
+client, for example:
+
+```
+uv run --env-file .env python <script.py>
+```
+
 ## Tests and coverage
 
 Install development dependencies with `uv sync --locked`, then run:
