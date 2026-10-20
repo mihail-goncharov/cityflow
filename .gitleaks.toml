@@ -1,0 +1,27 @@
+title = "CityFlow secret scanning"
+
+[extend]
+useDefault = true
+
+# Keep provider tokens and private keys covered by the built-in rules. These
+# additional rules also catch short, low-entropy credentials in env/YAML/code.
+[[rules]]
+id = "cityflow-rustfs-credentials"
+description = "Hardcoded RustFS access key or secret key"
+regex = '''(?i)(?:^|[\s"'`])RUSTFS_(?:ACCESS_KEY|SECRET_KEY)["']?[ \t]*(?:=|:)[ \t]*("[^"$<{\r\n][^"\r\n]*"|'[^'$<{\r\n][^'\r\n]*'|[^\s"'`$<>\\{}\[\],;#]+)'''
+secretGroup = 1
+keywords = ["rustfs_access_key", "rustfs_secret_key"]
+
+[[rules.allowlists]]
+description = "Existing commented local username example, including in Git history"
+condition = "AND"
+paths = ['''^\.?env\.example$''']
+regexTarget = "line"
+regexes = ['''^\s*# e\.g\. RUSTFS_ACCESS_KEY=cityflow-local\s*$''']
+
+[[rules]]
+id = "cityflow-password"
+description = "Hardcoded password (including weak passwords)"
+regex = '''(?i)(?:^|[\s"'`])(?:[a-z0-9]+[_-])*(?:password|passwd|pwd)["']?[ \t]*(?:=|:)[ \t]*("[^"$<{\r\n][^"\r\n]*"|'[^'$<{\r\n][^'\r\n]*'|[^\s"'`$<>\\{}\[\],;#]+)'''
+secretGroup = 1
+keywords = ["password", "passwd", "pwd"]

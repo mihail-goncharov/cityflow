@@ -27,7 +27,9 @@ dev = [
     "jupyter>=1.1.1",
     "moto>=5.2.4",
     "mypy>=2.4.0",
+    "pip-audit>=2.10.1",
     "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
     "ruff>=0.17.0",
 ]
 
@@ -45,3 +47,16 @@ files = ["src/cityflow"]
 check_untyped_defs = true
 warn_return_any = true
 warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers --cov=cityflow --cov-report=term-missing --cov-report=html:htmlcov --cov-report=xml:coverage.xml"
+
+[tool.coverage.run]
+branch = true
+source = ["cityflow"]
+relative_files = true
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80

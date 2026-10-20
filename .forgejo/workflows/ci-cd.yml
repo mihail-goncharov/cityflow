@@ -13,6 +13,7 @@ jobs:
       - name: Checkout repository
         uses: https://code.forgejo.org/actions/checkout@v6
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Repository sanity checks
@@ -23,24 +24,95 @@ jobs:
           test -d src
           echo 'Repository structure looks good.'
 
-      - name: Python quality gates (when Python project is present)
+      - name: Shell script checks (ShellCheck)
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -y --no-install-recommends shellcheck >/dev/null
+          shellcheck --version
+          shellcheck --severity=style infra/scripts/*.sh
+
+      - name: Gitleaks (changed commits)
         shell: bash
         env:
-          POLARS_FORCE_PKG: compat
+          SCAN_BASE: ${{ forgejo.event.pull_request.base.sha || forgejo.event.before }}
+          SCAN_HEAD: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
+        run: |
+          set -euo pipefail
+          bash infra/scripts/install-gitleaks.sh "$RUNNER_TEMP/gitleaks-bin"
+          export PATH="$RUNNER_TEMP/gitleaks-bin:$PATH"
+          printf '%s\n' "$RUNNER_TEMP/gitleaks-bin" >> "$FORGEJO_PATH"
+          bash infra/scripts/scan-secrets.sh changes "$SCAN_BASE" "$SCAN_HEAD"
+
+      - name: Compose configuration check (Docker Compose CLI)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Install CLI tools only in the Debian Bookworm job container.
+          apt-get update -qq
+          apt-get install -y --no-install-recommends ca-certificates curl >/dev/null
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL --retry 3 https://download.docker.com/linux/debian/gpg \
+            -o /etc/apt/keyrings/docker.asc
+          chmod a+r /etc/apt/keyrings/docker.asc
+          printf '%s\n' \
+            'Types: deb' \
+            'URIs: https://download.docker.com/linux/debian' \
+            'Suites: bookworm' \
+            'Components: stable' \
+            "Architectures: $(dpkg --print-architecture)" \
+            'Signed-By: /etc/apt/keyrings/docker.asc' \
+            > /etc/apt/sources.list.d/docker.sources
+          apt-get update -qq
+          apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin >/dev/null
+          docker compose version
+          bash infra/scripts/check-compose.sh
+
+      - name: Install Python dependencies (when Python project is present)
+        shell: bash
         run: |
           set -euo pipefail
           if [ ! -f pyproject.toml ]; then
-            echo 'Python project not added yet: skipping uv/ruff/mypy/pytest.'
+            echo 'Python project not added yet: skipping Python checks.'
             exit 0
           fi
           test -f uv.lock || { echo 'Missing uv.lock: run uv lock and commit it.'; exit 1; }
           curl -LsSf https://astral.sh/uv/install.sh | sh
           export PATH="$HOME/.local/bin:$PATH"
+          printf '%s\n' "$HOME/.local/bin" >> "$FORGEJO_PATH"
           uv python install 3.13
+          uv lock --check --python 3.13
           uv sync --locked --python 3.13 --group ci
+
+      - name: Python dependency audit (pip-audit)
+        if: ${{ hashFiles('pyproject.toml') != '' }}
+        shell: bash
+        run: bash infra/scripts/audit-dependencies.sh
+
+      - name: Python quality gates (Ruff, mypy, pytest)
+        if: ${{ hashFiles('pyproject.toml') != '' }}
+        shell: bash
+        env:
+          POLARS_FORCE_PKG: compat
+        run: |
+          set -euo pipefail
           uv run --no-sync ruff check .
           uv run --no-sync mypy
-          uv run --no-sync pytest -q
+          printf '## Coverage\n\n' >> "$FORGEJO_STEP_SUMMARY"
+          uv run --no-sync pytest -q \
+            --cov-report="markdown-append:$FORGEJO_STEP_SUMMARY"
+
+      - name: Upload coverage reports
+        if: ${{ always() }}
+        uses: https://code.forgejo.org/actions/upload-artifact@v3
+        with:
+          name: coverage
+          path: |
+            coverage.xml
+            htmlcov/
+          if-no-files-found: warn
+          retention-days: 14
 
   deploy:
     needs: ci

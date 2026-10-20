@@ -177,6 +177,9 @@ def business_questions(df: pl.DataFrame) -> None:
     print("Number of trips per hour: ", trips_per_hour)
 
     # 10. Busiest hour
+    if trips_per_hour.is_empty():
+        print("Busiest hour: N/A")
+        return
     busiest_hour, trips_busy_hour = trips_per_hour.sort(by="trips", descending=True).head(1).row()
     print(f"Busiest hour: {busiest_hour:02d}:00 - {busiest_hour + 1:02d}:00 ({trips_busy_hour:,} trips)")
 
