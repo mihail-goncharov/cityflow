@@ -75,3 +75,11 @@ def test_upload_to_missing_bucket_raises_storage_error(adapter, tmp_path):
 
     with pytest.raises(StorageError):
         upload_text_file(adapter=new_adapter, tmp_path=tmp_path, key=KEY)
+
+
+def test_list_objects_returns_all_pages(adapter):
+    keys = [f"raw/{i}.txt" for i in range(1001)]
+    for key in keys:
+        adapter.client.put_object(Bucket=BUCKET, Key=key, Body=b"")
+
+    assert sorted(adapter.list_objects()) == sorted(keys)
