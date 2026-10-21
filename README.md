@@ -105,6 +105,26 @@ questions:
 uv run --locked python src/cityflow/profile_data.py
 ```
 
+### 4. Object storage (RustFS)
+
+Copy `.env.example` to `.env` and fill in `S3_ACCESS_KEY` and `S3_SECRET_KEY`
+with your keys from the RustFS admin. Never commit `.env`.
+
+RustFS on the dev VM is reachable only through an SSH tunnel. Port 9000 is the
+S3 API; port 9001 is the web UI at http://127.0.0.1:9001 (log in with the same
+keys):
+
+```
+ssh -L 9000:127.0.0.1:9000 -L 9001:127.0.0.1:9001 <user>@cityflow-dev
+```
+
+`.env` is not loaded automatically. Pass it to every command that uses the S3
+client, for example:
+
+```
+uv run --env-file .env python <script.py>
+```
+
 ## Tests and coverage
 
 Install development dependencies with `uv sync --locked`, then run:
@@ -117,6 +137,8 @@ Tests use small synthetic datasets and temporary files; downloaded taxi data
 and external services are not required. They cover quality rule boundaries,
 missing values, trip filtering and schema preservation, numeric formatting,
 business aggregates, empty inputs, and source manifest metadata and SHA-256.
+The S3 adapter tests use moto (an in-memory fake S3), so they need no RustFS
+or credentials.
 
 Pytest-cov measures statement and branch coverage for the entire `cityflow`
 package. Each run prints missing lines and saves `htmlcov/index.html` (browsable
