@@ -2,6 +2,8 @@ import re
 from datetime import datetime
 
 
+TLC_BASE_URL = "https://d37ci6vzurychx.cloudfront.net/trip-data"
+
 
 def parse_month(value: str) -> str:
     message = f"Invalid month '{value}': expected YYYY-MM, e.g. 2025-01"
@@ -16,4 +18,6 @@ def parse_month(value: str) -> str:
         return value
 
 
-
+def build_source_url(month: str) -> str:
+    parse_month(month)
+    return f"{TLC_BASE_URL}/yellow_tripdata_{month}.parquet"
