@@ -34,7 +34,7 @@ def build_source_url(month: str) -> str:
     return f"{TLC_BASE_URL}/yellow_tripdata_{month}.parquet"
 
 
-def download_file(url: str, destination: Path) -> None:
+def download_file(url: str, destination: Path, client: httpx.Client) -> None:
     """Download url to destination in a single attempt.
 
     Streams the response into a temporary ``.part`` file and checks its size
@@ -43,7 +43,7 @@ def download_file(url: str, destination: Path) -> None:
     """
     temp_path = Path(f"{destination}.part")
 
-    with httpx.stream("GET", url, timeout=DOWNLOAD_TIMEOUT) as response:
+    with client.stream("GET", url, timeout=DOWNLOAD_TIMEOUT) as response:
         response.raise_for_status()
 
         try:
@@ -67,6 +67,7 @@ def download_file(url: str, destination: Path) -> None:
 def download_with_retries(
     url: str,
     destination: Path,
+    client: httpx.Client,
     max_attempts: int = MAX_ATTEMPTS,
     retry_delay: float = RETRY_DELAY_SECONDS,
 ) -> None:
@@ -82,7 +83,7 @@ def download_with_retries(
 
     for attempt in range(1, max_attempts + 1):
         try:
-            download_file(url, destination)
+            download_file(url, destination, client)
             return
         except httpx.HTTPStatusError as error:
             if error.response.status_code < 500:
