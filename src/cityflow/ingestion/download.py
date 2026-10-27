@@ -29,8 +29,15 @@ def build_source_url(month: str) -> str:
 
 
 def download_file(url: str, destination: Path) -> None:
+    temp_path = Path(f"{destination}.part")
     with httpx.stream("GET", url, timeout=DOWNLOAD_TIMEOUT) as response:
         response.raise_for_status()
-        with open(destination, "wb") as file:
-            for chunk in response.iter_bytes(chunk_size=CHUNK_SIZE):
-                file.write(chunk)
+        try:
+            with open(temp_path, "wb") as file:
+                for chunk in response.iter_bytes(chunk_size=CHUNK_SIZE):
+                    file.write(chunk)
+        except Exception:
+            temp_path.unlink(missing_ok=True)
+            raise
+        else:
+            temp_path.replace(destination)
