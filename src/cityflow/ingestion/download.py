@@ -1,17 +1,19 @@
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 
 import httpx
 
-
 TLC_BASE_URL = "https://d37ci6vzurychx.cloudfront.net/trip-data"
 CHUNK_SIZE = 1024 * 1024
 DOWNLOAD_TIMEOUT = httpx.Timeout(timeout=30, connect=10)
+MAX_ATTEMPTS = 3
+RETRY_DELAY_SECONDS = 5.0
 
 
 class DownloadError(Exception):
-    pass
+    """Raised when a file cannot be downloaded completely."""
 
 
 def parse_month(value: str) -> str:
@@ -40,8 +42,7 @@ def download_file(url: str, destination: Path) -> None:
 
         try:
             with open(temp_path, "wb") as file:
-                for chunk in response.iter_bytes(chunk_size=CHUNK_SIZE):
-                    file.write(chunk)
+                file.writelines(response.iter_bytes(chunk_size=CHUNK_SIZE))
 
             url_content_length = response.headers.get("Content-Length")
             if url_content_length is not None and int(url_content_length) != response.num_bytes_downloaded:
@@ -53,3 +54,35 @@ def download_file(url: str, destination: Path) -> None:
             raise
         else:
             temp_path.replace(destination)
+
+
+def download_with_retries(
+        url: str,
+        destination: Path,
+        max_attempts: int = MAX_ATTEMPTS,
+        retry_delay: float = RETRY_DELAY_SECONDS,
+) -> None:
+    """Download url to destination, retrying temporary failures.
+
+    Makes up to max_attempts attempts (default 3), waiting retry_delay
+    (default 5) between them. Network errors, timeouts, 5xx responses and
+    incomplete downloads are retried; 4xx responses fail immediately with httpx.HTTPStatusError.
+    Raises DownloadError when all attempts fail.
+    """
+    last_error: Exception | None = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            download_file(url, destination)
+            return
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code < 500:
+                raise
+            last_error = error
+        except (httpx.TransportError, DownloadError) as error:
+            last_error = error
+
+        if attempt < max_attempts:
+            time.sleep(retry_delay)
+
+    raise DownloadError(f"Failed to download {url} after {max_attempts} attempts") from last_error
