@@ -35,6 +35,12 @@ def build_source_url(month: str) -> str:
 
 
 def download_file(url: str, destination: Path) -> None:
+    """Download url to destination in a single attempt.
+
+    Streams the response into a temporary ``.part`` file and checks its size
+    against Content-Length when the server provides it. On any failure the
+    partial file is removed; on success it is renamed to destination.
+    """
     temp_path = Path(f"{destination}.part")
 
     with httpx.stream("GET", url, timeout=DOWNLOAD_TIMEOUT) as response:
@@ -44,11 +50,13 @@ def download_file(url: str, destination: Path) -> None:
             with open(temp_path, "wb") as file:
                 file.writelines(response.iter_bytes(chunk_size=CHUNK_SIZE))
 
-            url_content_length = response.headers.get("Content-Length")
-            if url_content_length is not None and int(url_content_length) != response.num_bytes_downloaded:
-                raise DownloadError(f"Incomplete download from {url}: "
-                                    f"expected {url_content_length} bytes, "
-                                    f"received {response.num_bytes_downloaded}")
+            content_length = response.headers.get("Content-Length")
+            received = response.num_bytes_downloaded
+            if content_length is not None and int(content_length) != received:
+                raise DownloadError(
+                    f"Incomplete download from {url}: "
+                    f"expected {content_length} bytes, received {received}"
+                )
         except Exception:
             temp_path.unlink(missing_ok=True)
             raise
@@ -57,17 +65,18 @@ def download_file(url: str, destination: Path) -> None:
 
 
 def download_with_retries(
-        url: str,
-        destination: Path,
-        max_attempts: int = MAX_ATTEMPTS,
-        retry_delay: float = RETRY_DELAY_SECONDS,
+    url: str,
+    destination: Path,
+    max_attempts: int = MAX_ATTEMPTS,
+    retry_delay: float = RETRY_DELAY_SECONDS,
 ) -> None:
     """Download url to destination, retrying temporary failures.
 
     Makes up to max_attempts attempts (default 3), waiting retry_delay
-    (default 5) between them. Network errors, timeouts, 5xx responses and
-    incomplete downloads are retried; 4xx responses fail immediately with httpx.HTTPStatusError.
-    Raises DownloadError when all attempts fail.
+    seconds (default 5) between them. Network errors, timeouts, 5xx
+    responses and incomplete downloads are retried. 4xx responses fail
+    immediately with httpx.HTTPStatusError. Raises DownloadError when all
+    attempts fail.
     """
     last_error: Exception | None = None
 
@@ -85,4 +94,6 @@ def download_with_retries(
         if attempt < max_attempts:
             time.sleep(retry_delay)
 
-    raise DownloadError(f"Failed to download {url} after {max_attempts} attempts") from last_error
+    raise DownloadError(
+        f"Failed to download {url} after {max_attempts} attempts"
+    ) from last_error

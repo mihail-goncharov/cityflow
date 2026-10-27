@@ -1,6 +1,6 @@
 import pytest
 
-from cityflow.ingestion.download import parse_month, build_source_url
+from cityflow.ingestion.download import build_source_url, parse_month
 
 
 @pytest.mark.parametrize("value", ["2025-1", "2025-13", "2025-00", "jan", ""])
