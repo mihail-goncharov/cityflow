@@ -2,6 +2,8 @@ from pathlib import Path
 
 import polars as pl
 
+from cityflow.ingestion.download import build_source_url
+
 
 class ValidationError(Exception):
     """Raised when a downloaded file does not meet the raw data contract."""
@@ -45,3 +47,8 @@ def check_schema(path: Path) -> None:
     if problems:
         raise ValidationError(f"{path}: {'; '.join(problems)}")
 
+
+def check_source_url(url: str, month: str) -> None:
+    expected_url = build_source_url(month)
+    if url != expected_url:
+        raise ValidationError(f"Unexpected source URL: expected {expected_url}, got {url}")
