@@ -1,0 +1,28 @@
+# Weekly full-history secret scan for the GitHub mirror.
+name: Gitleaks history
+
+on:
+  schedule:
+    # Mondays 04:00 UTC (06:00 Europe/Chisinau in winter, 07:00 in summer).
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout all branches and tags
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Gitleaks (full Git history)
+        run: |
+          bash infra/scripts/install-gitleaks.sh "$RUNNER_TEMP/gitleaks-bin"
+          export PATH="$RUNNER_TEMP/gitleaks-bin:$PATH"
+          bash infra/scripts/scan-secrets.sh history
