@@ -20,6 +20,11 @@ def destination(tmp_path) -> Path:
     return tmp_path / "file.parquet"
 
 
+@pytest.fixture()
+def part_file(destination) -> Path:
+    return Path(f"{destination}.part")
+
+
 def make_client(handler) -> httpx.Client:
     return httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -55,8 +60,7 @@ def test_build_source_url_january_2025():
     )
 
 
-def test_download_file_success(destination):
-    part_file = Path(f"{destination}.part")
+def test_download_file_success(destination, part_file):
     with make_client(handler=ok_handler) as client:
         download_file(URL, destination, client)
 
@@ -64,8 +68,7 @@ def test_download_file_success(destination):
     assert not part_file.exists()
 
 
-def test_download_file_truncated_raises_download_error(destination):
-    part_file = Path(f"{destination}.part")
+def test_download_file_truncated_raises_download_error(destination, part_file):
 
     with make_client(handler=truncated_handler) as client, pytest.raises(DownloadError):
         download_file(URL, destination, client)
@@ -134,3 +137,29 @@ def test_download_with_retries_succeeds_after_timeout(destination):
 
     assert len(requests) == 2
     assert destination.read_bytes() == CONTENT
+
+
+def interrupted_body():
+    yield CONTENT
+    raise KeyboardInterrupt
+
+
+def test_download_file_interrupted_removes_partial_file(destination, part_file):
+    def handler(request):
+        return httpx.Response(200, content=interrupted_body())
+
+    with make_client(handler=handler) as client, pytest.raises(KeyboardInterrupt):
+        download_file(URL, destination, client)
+
+
+    assert not destination.exists()
+    assert not part_file.exists()
+
+
+def test_download_file_failed_rename_removes_partial_file(destination, part_file):
+    destination.mkdir()
+    with make_client(ok_handler) as client, pytest.raises(OSError):
+        download_file(URL, destination, client)
+
+    assert not part_file.exists()
+    assert destination.is_dir()

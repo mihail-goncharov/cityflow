@@ -39,7 +39,7 @@ def download_file(url: str, destination: Path, client: httpx.Client) -> None:
 
     Streams the response into a temporary ``.part`` file and checks its size
     against Content-Length when the server provides it. On any failure the
-    partial file is removed; on success it is renamed to destination.
+    partial file is removed; on success it is renamed.
     """
     temp_path = Path(f"{destination}.part")
 
@@ -57,11 +57,10 @@ def download_file(url: str, destination: Path, client: httpx.Client) -> None:
                     f"Incomplete download from {url}: "
                     f"expected {content_length} bytes, received {received}"
                 )
-        except Exception:
-            temp_path.unlink(missing_ok=True)
-            raise
-        else:
+
             temp_path.replace(destination)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
 
 def download_with_retries(
