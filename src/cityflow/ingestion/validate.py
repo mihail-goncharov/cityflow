@@ -1,8 +1,14 @@
+import json
+import logging
 from pathlib import Path
 
 import polars as pl
 
+from cityflow.build_manifest import PROJECT_ROOT, sha256_of
 from cityflow.ingestion.download import build_source_url
+
+BASELINE_FILE = PROJECT_ROOT / "docs" / "source_manifest.json"
+logger = logging.getLogger(__name__)
 
 
 class ValidationError(Exception):
@@ -52,3 +58,16 @@ def check_source_url(url: str, month: str) -> None:
     expected_url = build_source_url(month)
     if url != expected_url:
         raise ValidationError(f"Unexpected source URL: expected {expected_url}, got {url}")
+
+
+def check_checksum(path: Path, month: str, baseline_path: Path = BASELINE_FILE) -> str:
+    with open(baseline_path, encoding="utf-8") as file:
+        source_manifest = json.load(file)
+
+    path_sha256 = sha256_of(path)
+    if source_manifest["source_month"] == month and source_manifest["sha256"] != path_sha256:
+        logger.warning("Checksum for %s differs from baseline: expected %s, got %s",
+                       month, source_manifest["sha256"], path_sha256)
+
+    return path_sha256
+
