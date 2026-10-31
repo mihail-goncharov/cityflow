@@ -11,6 +11,7 @@ from cityflow.ingestion.validate import (
     ValidationError,
     build_source_url,
     check_checksum,
+    check_contents_readable,
     check_not_empty,
     check_schema,
     check_source_url,
@@ -84,6 +85,23 @@ def test_check_schema_wrong_type_raises_validation_error(tmp_file):
 
     with pytest.raises(ValidationError, match="fare_amount"):
         check_schema(tmp_file)
+
+
+def test_check_contents_readable_damaged_pages_raises_validation_error(tmp_file):
+    valid_trips().write_parquet(tmp_file)
+    file_bytes = bytearray(tmp_file.read_bytes())
+    # break the first page header, keep the footer
+    file_bytes[4:20] = bytes(16)
+    tmp_file.write_bytes(file_bytes)
+
+    check_schema(tmp_file)
+    with pytest.raises(ValidationError):
+        check_contents_readable(tmp_file)
+
+
+def test_check_contents_readable_valid_pages(tmp_file):
+    valid_trips().write_parquet(tmp_file)
+    check_contents_readable(tmp_file)
 
 
 def test_check_source_url_matching_url_passes():

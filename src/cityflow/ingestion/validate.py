@@ -9,6 +9,7 @@ from cityflow.ingestion.download import build_source_url
 
 BASELINE_FILE = PROJECT_ROOT / "docs" / "source_manifest.json"
 logger = logging.getLogger(__name__)
+READ_BATCH_ROWS = 100_000
 
 
 class ValidationError(Exception):
@@ -52,6 +53,15 @@ def check_schema(path: Path) -> None:
         problems.append("wrong types: " + ", ".join(wrong_types))
     if problems:
         raise ValidationError(f"{path}: {'; '.join(problems)}")
+
+
+def check_contents_readable(path: Path) -> None:
+    try:
+        reader = pl.scan_parquet(path)
+        for _ in reader.collect_batches(chunk_size=READ_BATCH_ROWS):
+            pass
+    except pl.exceptions.PolarsError as error:
+        raise ValidationError(f"{path} data pages cannot be decoded") from error
 
 
 def check_source_url(url: str, month: str) -> None:

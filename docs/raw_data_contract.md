@@ -19,7 +19,7 @@ file is not published and ingestion fails with a clear error.
 | Check | Rule |
 |---|---|
 | Size | larger than 0 bytes |
-| Format | readable Parquet: the file metadata (schema) can be read |
+| Format | readable Parquet: the file metadata (schema) can be read, and all data pages can be decoded. The data is read in bounded batches, so the whole file is never loaded into memory at once |
 | Columns | all required columns are present, with the expected types (section 3) |
 
 
