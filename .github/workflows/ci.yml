@@ -1,0 +1,86 @@
+# GitHub Actions CI for the GitHub mirror of CityFlow.
+# The primary repository and its CI/CD live on Forgejo (.forgejo/workflows).
+# Forgejo ignores .github/workflows while .forgejo/workflows exists.
+# Deployment is intentionally not part of this workflow.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Repository sanity checks
+        run: |
+          test -f README.md
+          test -d src
+
+      - name: Shell script checks (ShellCheck)
+        run: |
+          shellcheck --version
+          shellcheck --severity=style infra/scripts/*.sh
+
+      - name: Gitleaks (pushed commits)
+        env:
+          SCAN_BASE: ${{ github.event.before }}
+          SCAN_HEAD: ${{ github.sha }}
+        run: |
+          bash infra/scripts/install-gitleaks.sh "$RUNNER_TEMP/gitleaks-bin"
+          echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
+          export PATH="$RUNNER_TEMP/gitleaks-bin:$PATH"
+          bash infra/scripts/scan-secrets.sh changes "$SCAN_BASE" "$SCAN_HEAD"
+
+      - name: Compose configuration check
+        run: |
+          docker compose version
+          bash infra/scripts/check-compose.sh
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install Python dependencies
+        run: |
+          uv python install 3.13
+          uv lock --check --python 3.13
+          uv sync --locked --python 3.13 --group ci
+
+      - name: Python dependency audit (pip-audit)
+        run: bash infra/scripts/audit-dependencies.sh
+
+      - name: Python quality gates (Ruff, mypy, pytest)
+        env:
+          POLARS_FORCE_PKG: compat
+        run: |
+          uv run --no-sync ruff check .
+          uv run --no-sync mypy
+          printf '## Coverage\n\n' >> "$GITHUB_STEP_SUMMARY"
+          uv run --no-sync pytest -q \
+            --cov-report="markdown-append:$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            coverage.xml
+            htmlcov/
+          if-no-files-found: warn
+          retention-days: 14
