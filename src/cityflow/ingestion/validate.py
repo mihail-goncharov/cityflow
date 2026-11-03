@@ -81,3 +81,14 @@ def check_checksum(path: Path, month: str, baseline_path: Path = BASELINE_FILE) 
 
     return path_sha256
 
+
+def validate_raw_file(path: Path, month: str, url: str) -> str:
+    """Run all raw data contract checks in order,
+    raises ValidationError on the first failure;
+    return the file's SHA-256."""
+
+    check_source_url(url, month)
+    check_not_empty(path)
+    check_schema(path)
+    check_contents_readable(path)
+    return check_checksum(path, month)

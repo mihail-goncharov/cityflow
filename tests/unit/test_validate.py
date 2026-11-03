@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 from pathlib import Path
 
 import polars as pl
@@ -7,7 +6,6 @@ import pytest
 
 from cityflow.build_manifest import sha256_of
 from cityflow.ingestion.validate import (
-    REQUIRED_COLUMNS,
     ValidationError,
     build_source_url,
     check_checksum,
@@ -37,21 +35,6 @@ def fake_baseline(path: Path, month: str, sha256: str) -> Path:
     return path
 
 
-def valid_trips() -> pl.DataFrame:
-    return pl.DataFrame(
-        {
-            "tpep_pickup_datetime": [datetime(2025, 1, 1, 10, 0)],
-            "tpep_dropoff_datetime": [datetime(2025, 1, 1, 10, 15)],
-            "PULocationID": [132],
-            "DOLocationID": [236],
-            "trip_distance": [3.2],
-            "fare_amount": [17.5],
-            "total_amount": [24.8],
-        },
-        schema=REQUIRED_COLUMNS
-    )
-
-
 def test_check_not_empty_empty_file_raises_validation_error(tmp_file):
     tmp_file.write_bytes(b"")
 
@@ -66,29 +49,29 @@ def test_check_schema_not_parquet_raises_validation_error(tmp_file):
         check_schema(tmp_file)
 
 
-def test_check_schema_valid_file_passes(tmp_file):
-    valid_trips().write_parquet(tmp_file)
+def test_check_schema_valid_file_passes(tmp_file, valid_trips):
+    valid_trips.write_parquet(tmp_file)
     check_schema(tmp_file)
 
 
-def test_check_schema_missing_column_raises_validation_error(tmp_file):
-    df = valid_trips().drop("fare_amount")
+def test_check_schema_missing_column_raises_validation_error(tmp_file, valid_trips):
+    df = valid_trips.drop("fare_amount")
     df.write_parquet(tmp_file)
 
     with pytest.raises(ValidationError, match="fare_amount"):
         check_schema(tmp_file)
 
 
-def test_check_schema_wrong_type_raises_validation_error(tmp_file):
-    df = valid_trips().cast({"fare_amount": pl.Float32})
+def test_check_schema_wrong_type_raises_validation_error(tmp_file, valid_trips):
+    df = valid_trips.cast({"fare_amount": pl.Float32})
     df.write_parquet(tmp_file)
 
     with pytest.raises(ValidationError, match="fare_amount"):
         check_schema(tmp_file)
 
 
-def test_check_contents_readable_damaged_pages_raises_validation_error(tmp_file):
-    valid_trips().write_parquet(tmp_file)
+def test_check_contents_readable_damaged_pages_raises_validation_error(tmp_file, valid_trips):
+    valid_trips.write_parquet(tmp_file)
     file_bytes = bytearray(tmp_file.read_bytes())
     # break the first page header, keep the footer
     file_bytes[4:20] = bytes(16)
@@ -99,8 +82,8 @@ def test_check_contents_readable_damaged_pages_raises_validation_error(tmp_file)
         check_contents_readable(tmp_file)
 
 
-def test_check_contents_readable_valid_pages(tmp_file):
-    valid_trips().write_parquet(tmp_file)
+def test_check_contents_readable_valid_pages(tmp_file, valid_trips):
+    valid_trips.write_parquet(tmp_file)
     check_contents_readable(tmp_file)
 
 
