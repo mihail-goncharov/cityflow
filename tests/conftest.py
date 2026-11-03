@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 
 import boto3
 import polars as pl
@@ -33,3 +34,8 @@ def adapter():
         client = boto3.client("s3", region_name="us-east-1")
         client.create_bucket(Bucket=BUCKET)
         yield S3StorageAdapter(BUCKET, client)
+
+
+@pytest.fixture()
+def tmp_file(tmp_path) -> Path:
+    return tmp_path / "file.parquet"

@@ -17,11 +17,6 @@ from cityflow.ingestion.validate import (
 
 
 @pytest.fixture()
-def tmp_file(tmp_path) -> Path:
-    return tmp_path / "file.parquet"
-
-
-@pytest.fixture()
 def data_file(tmp_path) -> Path:
     file = tmp_path / "data_file.parquet"
     file.write_bytes(b"Content")
