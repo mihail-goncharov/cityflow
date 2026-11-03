@@ -1,21 +1,12 @@
 from pathlib import Path
 
-import boto3
 import pytest
-from moto import mock_aws
 
 from cityflow.storage.s3_adapter import S3StorageAdapter, StorageError
 
 BUCKET = "test-bucket"
 KEY = "raw/example.txt"
 CONTENT = b"Content"
-
-@pytest.fixture
-def adapter():
-    with mock_aws():
-        client = boto3.client("s3", region_name="us-east-1")
-        client.create_bucket(Bucket=BUCKET)
-        yield S3StorageAdapter(BUCKET, client)
 
 
 def upload_text_file(adapter: S3StorageAdapter, tmp_path: Path, key: str, text: str = "CityFlow") -> None:
