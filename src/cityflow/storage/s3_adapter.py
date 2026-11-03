@@ -59,4 +59,20 @@ class S3StorageAdapter:
         except S3_ERRORS as e:
             raise StorageError(f"Failed to delete '{key}' from bucket '{self.bucket}'") from e
 
+    def read_bytes(self, key: str) -> bytes | None:
+        error_message = f"Failed to read '{key}' from bucket '{self.bucket}'"
+        try:
+            object_data = self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+            return object_data
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "NoSuchKey":
+                return None
+            raise StorageError(error_message) from error
+        except S3_ERRORS as error:
+            raise StorageError(error_message) from error
 
+    def write_bytes(self, key: str, data: bytes) -> None:
+        try:
+            self.client.put_object(Bucket=self.bucket, Key=key, Body=data)
+        except S3_ERRORS as error:
+            raise StorageError(f"Failed to write '{key}' to bucket '{self.bucket}'") from error

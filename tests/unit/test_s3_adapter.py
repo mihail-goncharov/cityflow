@@ -8,7 +8,7 @@ from cityflow.storage.s3_adapter import S3StorageAdapter, StorageError
 
 BUCKET = "test-bucket"
 KEY = "raw/example.txt"
-
+CONTENT = b"Content"
 
 @pytest.fixture
 def adapter():
@@ -83,3 +83,18 @@ def test_list_objects_returns_all_pages(adapter):
         adapter.client.put_object(Bucket=BUCKET, Key=key, Body=b"")
 
     assert sorted(adapter.list_objects()) == sorted(keys)
+
+
+def test_written_bytes_can_be_read_back(adapter):
+    adapter.write_bytes(KEY, CONTENT)
+    assert adapter.read_bytes(KEY) == CONTENT
+
+
+def test_read_bytes_missing_key_returns_none(adapter):
+    assert adapter.read_bytes(KEY) is None
+
+
+def test_read_bytes_missing_bucket_raises_storage_error(adapter):
+    missing_bucket_adapter = S3StorageAdapter("no-such-bucket", adapter.client)
+    with pytest.raises(StorageError):
+        missing_bucket_adapter.read_bytes(KEY)
