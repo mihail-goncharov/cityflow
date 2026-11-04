@@ -1,5 +1,9 @@
+from datetime import UTC, datetime
+from pathlib import Path
+
 from cityflow.ingestion.manifest import (
     Manifest,
+    build_manifest,
     build_manifest_key,
     manifest_from_json,
     manifest_to_json,
@@ -43,3 +47,28 @@ def test_write_manifest_can_be_read_back(adapter: S3StorageAdapter):
 
 def test_read_manifest_missing_key_returns_none(adapter: S3StorageAdapter):
     assert read_manifest(adapter, "missing/manifest.json") is None
+
+
+def test_build_manifest(tmp_file: Path):
+    content = b"content"
+    tmp_file.write_bytes(content)
+
+    manifest = build_manifest(
+        bucket="test-bucket",
+        object_key="test-key",
+        sha256="0000000000000",
+        url="test-url",
+        month="2025-01",
+        local_path=tmp_file,
+    )
+
+    assert manifest.source_month == "2025-01"
+    assert manifest.url == "test-url"
+    assert manifest.bucket == "test-bucket"
+    assert manifest.object_key == "test-key"
+    assert manifest.sha256 == "0000000000000"
+    assert manifest.source == "nyc_tlc_yellow"
+    assert manifest.contract_version == 1
+    assert manifest.size_bytes == len(content)
+    assert manifest.publication_status == "pending"
+    assert datetime.fromisoformat(manifest.ingested_at).tzinfo == UTC

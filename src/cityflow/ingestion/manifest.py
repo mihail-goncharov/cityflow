@@ -1,12 +1,15 @@
 import dataclasses
 import json
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from datetime import UTC, datetime
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from cityflow.storage.s3_adapter import S3StorageAdapter
 
 PublicationStatus = Literal["pending", "published"]
+SOURCE = "nyc_tlc_yellow"
+CONTRACT_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -47,3 +50,27 @@ def read_manifest(storage: S3StorageAdapter, key: str) -> Manifest | None:
 
 def write_manifest(storage: S3StorageAdapter, key: str, manifest: Manifest) -> None:
     storage.write_bytes(key, manifest_to_json(manifest))
+
+
+def build_manifest(
+    *, bucket: str, object_key: str, sha256: str, url: str, month: str, local_path: Path
+) -> Manifest:
+    """Build a pending manifest for a local raw file.
+
+       Size and ingestion timestamp (UTC) are computed here; source and
+       contract version come from module constants. The status is always
+       ``pending``: it becomes ``published`` only after the object is
+       uploaded and verified.
+       """
+    return Manifest(
+        source_month=month,
+        source=SOURCE,
+        url=url,
+        bucket=bucket,
+        object_key=object_key,
+        sha256=sha256,
+        size_bytes=local_path.stat().st_size,
+        ingested_at=datetime.now(UTC).isoformat(),
+        contract_version=CONTRACT_VERSION,
+        publication_status="pending",
+    )
