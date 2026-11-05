@@ -15,7 +15,7 @@ from cityflow.ingestion.publish import (
     publish_raw_file,
     verify_remote_object,
 )
-from cityflow.storage.s3_adapter import S3StorageAdapter
+from cityflow.storage.s3_adapter import S3StorageAdapter, StorageError
 
 CONTENT = b"Content"
 KEY = "raw/test/data.parquet"
@@ -152,3 +152,57 @@ def test_publish_raw_file_pending_without_object_publishes_again(
     assert manifest.sha256 == sha256
 
     verify_remote_object(adapter, KEY, sha256, tmp_path)
+
+
+def test_publish_raw_file_upload_failure_then_rerun_publishes(
+    adapter, tmp_path, tmp_file, monkeypatch
+):
+    tmp_file.write_bytes(CONTENT)
+
+    def fake_upload_object(local_path: Path, key: str) -> None:
+        raise StorageError("Simulated upload failure")
+
+    monkeypatch.setattr(adapter, "upload_object", fake_upload_object)
+    with pytest.raises(StorageError, match="Simulated"):
+        _publish(adapter, tmp_file, tmp_path)
+    monkeypatch.undo()
+
+    manifest_after_failure = read_manifest(adapter, MANIFEST_KEY)
+    second_publish = _publish(adapter, tmp_file, tmp_path)
+
+    assert second_publish == "published"
+    assert manifest_after_failure is not None
+    assert manifest_after_failure.publication_status == "pending"
+
+    verify_remote_object(adapter, KEY, sha256_of(tmp_file), tmp_path)
+
+
+def test_publish_raw_file_manifest_write_failure_then_rerun_recovers(
+    adapter, tmp_path, tmp_file, monkeypatch
+):
+    tmp_file.write_bytes(CONTENT)
+    original_write = adapter.write_bytes
+    calls = []
+
+    def fake_write_bytes(key: str, data: bytes) -> None:
+        calls.append(key)
+        if len(calls) == 1:
+            original_write(key, data)
+        else:
+            raise StorageError("Simulated manifest write failure")
+
+    monkeypatch.setattr(adapter, "write_bytes", fake_write_bytes)
+    with pytest.raises(StorageError, match="Simulated manifest"):
+        _publish(adapter, tmp_file, tmp_path)
+    monkeypatch.undo()
+    verify_remote_object(adapter, KEY, sha256_of(tmp_file), tmp_path)
+
+    manifest_after_failure = read_manifest(adapter, MANIFEST_KEY)
+    second_publish = _publish(adapter, tmp_file, tmp_path)
+    manifest_after_rerun = read_manifest(adapter, MANIFEST_KEY)
+
+    assert manifest_after_failure is not None
+    assert manifest_after_failure.publication_status == "pending"
+    assert manifest_after_rerun is not None
+    assert manifest_after_rerun.publication_status == "published"
+    assert second_publish == "recovered"
