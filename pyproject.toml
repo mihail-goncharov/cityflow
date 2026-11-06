@@ -51,7 +51,10 @@ warn_unused_ignores = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--strict-markers --cov=cityflow --cov-report=term-missing --cov-report=html:htmlcov --cov-report=xml:coverage.xml"
+addopts = "--strict-markers -m 'not rustfs' --cov=cityflow --cov-report=term-missing --cov-report=html:htmlcov --cov-report=xml:coverage.xml"
+markers = [
+    "rustfs: needs a running RustFS and S3_* environment; run explicitly with -m rustfs",
+]
 
 [tool.coverage.run]
 branch = true
