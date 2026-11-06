@@ -1,0 +1,12 @@
+{
+  "source_month": "2025-01",
+  "source": "nyc_tlc_yellow",
+  "url": "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-01.parquet",
+  "bucket": "example-bucket",
+  "object_key": "raw/nyc_tlc/yellow_taxi/year=2025/month=01/yellow_tripdata_2025-01.parquet",
+  "sha256": "9af277e4c0d3f9deb30644da822981e1e7df6af58313170fd3aa8a474485488a",
+  "size_bytes": 59158238,
+  "ingested_at": "2025-01-01T12:00:00+00:00",
+  "contract_version": 1,
+  "publication_status": "published"
+}
