@@ -175,6 +175,40 @@ def test_publish_raw_file_run_started_while_another_is_pending_does_not_overwrit
     verify_remote_object(adapter, KEY, manifest.sha256, tmp_path)
 
 
+def test_publish_raw_file_second_run_starting_with_no_manifest_stops(
+    adapter, tmp_path, tmp_file, monkeypatch
+):
+    # Both runs read "no manifest" before either creates one; run B finishes
+    # first. Run A must stop without touching what B published.
+    tmp_file.write_bytes(CONTENT)
+    other_file = tmp_path / "other.parquet"
+    other_file.write_bytes(b"other_content")
+    original_read = publish_module.read_manifest
+    other_run: dict[str, PublishOutcome | None] = {"outcome": None}
+    started = []
+
+    def read_then_let_other_run_finish(storage, key):
+        manifest = original_read(storage, key)
+        if not started:
+            started.append(True)
+            other_run["outcome"] = _publish(adapter, other_file, tmp_path)
+        return manifest
+
+    monkeypatch.setattr(publish_module, "read_manifest", read_then_let_other_run_finish)
+    with pytest.raises(PublicationError, match="Another run"):
+        _publish(adapter, tmp_file, tmp_path)
+    monkeypatch.undo()
+
+    manifest = read_manifest(adapter, MANIFEST_KEY)
+
+    assert other_run["outcome"] == "published"
+    assert manifest is not None
+    assert manifest.publication_status == "published"
+    assert manifest.sha256 == sha256_of(other_file)
+    verify_remote_object(adapter, KEY, sha256_of(other_file), tmp_path)
+    assert sorted(adapter.list_objects()) == [KEY, MANIFEST_KEY]
+
+
 def test_publish_raw_file_pending_with_valid_object_recovers(
     adapter, tmp_path, tmp_file
 ):
@@ -236,15 +270,11 @@ def test_publish_raw_file_manifest_write_failure_then_rerun_recovers(
     adapter, tmp_path, tmp_file, monkeypatch
 ):
     tmp_file.write_bytes(CONTENT)
-    original_write = adapter.write_bytes
-    calls = []
 
+    # The pending manifest is created with write_bytes_if_absent, so the only
+    # write_bytes call is the final "published" write.
     def fake_write_bytes(key: str, data: bytes) -> None:
-        calls.append(key)
-        if len(calls) == 1:
-            original_write(key, data)
-        else:
-            raise StorageError("Simulated manifest write failure")
+        raise StorageError("Simulated manifest write failure")
 
     monkeypatch.setattr(adapter, "write_bytes", fake_write_bytes)
     with pytest.raises(StorageError, match="Simulated manifest"):

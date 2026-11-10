@@ -8,6 +8,7 @@ from cityflow.ingestion.manifest import (
     build_manifest_key,
     read_manifest,
     write_manifest,
+    write_manifest_if_absent,
 )
 from cityflow.storage.s3_adapter import S3StorageAdapter, StorageError
 
@@ -52,8 +53,15 @@ def _publish_new(
     month: str,
     work_dir: Path,
     local_path: Path,
+    create_only: bool,
 ) -> None:
-    """Upload and verify the file, moving the manifest from pending to published."""
+    """Upload and verify the file, moving the manifest from pending to published.
+
+    With ``create_only`` the pending manifest is created only if none exists,
+    so one run wins when several start together; the others raise
+    PublicationError before writing anything. Without it, an existing pending
+    manifest of the same file is rewritten (recovery).
+    """
     manifest = build_manifest(
         bucket=storage.bucket,
         object_key=object_key,
@@ -65,7 +73,13 @@ def _publish_new(
 
     manifest_key = build_manifest_key(object_key)
 
-    write_manifest(storage, manifest_key, manifest)
+    if create_only:
+        if not write_manifest_if_absent(storage, manifest_key, manifest):
+            raise PublicationError(
+                f"Another run is already publishing '{object_key}'; nothing was written"
+            )
+    else:
+        write_manifest(storage, manifest_key, manifest)
     storage.upload_object(local_path, object_key)
     verify_remote_object(storage, object_key, sha256, work_dir)
     manifest_published = dataclasses.replace(manifest, publication_status="published")
@@ -86,8 +100,9 @@ def publish_raw_file(
 
     Reads the manifest stored next to the object and decides what to do:
 
-    - no manifest: write a ``pending`` manifest, upload the file, verify the
-      remote object by SHA-256, then mark the manifest ``published``;
+    - no manifest: create a ``pending`` manifest (only one run can; any other
+      run raises PublicationError and writes nothing), upload the file, verify
+      the remote object by SHA-256, then mark the manifest ``published``;
     - ``published`` with the same SHA-256: do nothing (rerun is a no-op);
     - ``published`` with a different SHA-256: raise PublicationError and
       leave the existing object untouched;
@@ -114,6 +129,7 @@ def publish_raw_file(
             month=month,
             work_dir=work_dir,
             local_path=local_path,
+            create_only=True,
         )
         return "published"
 
@@ -145,6 +161,7 @@ def publish_raw_file(
             month=month,
             work_dir=work_dir,
             local_path=local_path,
+            create_only=False,
         )
         return "published"
     else:
