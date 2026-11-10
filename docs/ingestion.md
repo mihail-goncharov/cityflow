@@ -62,7 +62,8 @@ existing manifest is read and decides what happens:
 | none | publish (section 1) | `published` |
 | `published`, same SHA-256 | nothing is written | `skipped` |
 | `published`, different SHA-256 | nothing is written, ingestion fails | `PublicationError` |
-| `pending` | verify the existing object, then complete or publish again (section 4) | `recovered` or `published` |
+| `pending`, same SHA-256 | verify the existing object, then complete or publish again (section 4) | `recovered` or `published` |
+| `pending`, different SHA-256 | nothing is written, ingestion fails | `PublicationError` |
 
 A second run with the same file therefore leaves exactly one data object and
 one manifest for the month and reports `skipped`.
@@ -74,6 +75,21 @@ changed or a different file was downloaded. Ingestion does not overwrite
 published data automatically: the existing object and manifest are kept as they
 are, and the error names the object key and both checksums. Which version is
 correct is decided by manual review.
+
+### Pending publication with a different checksum
+
+A `pending` manifest does not say whether its run is still active or was
+interrupted. A run that finds one with a **different** SHA-256 therefore fails
+with `PublicationError` and writes nothing: overwriting could leave a
+`published` manifest that describes one file while storage holds another.
+Runs with the **same** SHA-256 are safe, because they write identical bytes.
+
+If the earlier run was interrupted for good (for example the source file
+changed), check that no run is active, delete the month's `manifest.json` and
+any partial data object, and run ingestion again.
+
+Known limit: two runs for the same month that start at the same moment, before
+either has written `pending`, are not prevented. Run one month at a time.
 
 
 ## 4. Recovery after an interrupted run
@@ -89,8 +105,10 @@ before it changes anything.
 | final manifest write (step 4) | manifest `pending`, complete object | verification passes, so only a new `published` manifest is written; the object is not uploaded again | `recovered` |
 
 Overwriting a `pending` object is safe because it was never marked
-`published`, so no reader may rely on it. The recovered manifest is built from
-the current run, so it describes exactly the bytes that were just verified.
+`published` and the `pending` manifest has the same SHA-256 as the current
+file (with a different SHA-256 the run fails, section 3). The recovered
+manifest is built from the current run, so it describes exactly the bytes that
+were just verified.
 
 No manual steps are needed for recovery: fix the cause of the failure, then run
 ingestion for the same month again.
