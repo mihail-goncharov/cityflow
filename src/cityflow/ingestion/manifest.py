@@ -52,6 +52,11 @@ def write_manifest(storage: S3StorageAdapter, key: str, manifest: Manifest) -> N
     storage.write_bytes(key, manifest_to_json(manifest))
 
 
+def write_manifest_if_absent(storage: S3StorageAdapter, key: str, manifest: Manifest) -> bool:
+    """Create the manifest only if none exists; return False if one does."""
+    return storage.write_bytes_if_absent(key, manifest_to_json(manifest))
+
+
 def build_manifest(
     *, bucket: str, object_key: str, sha256: str, url: str, month: str, local_path: Path
 ) -> Manifest:

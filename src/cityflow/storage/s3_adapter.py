@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from mypy_boto3_s3 import S3Client
 
 S3_ERRORS = (ClientError, BotoCoreError, Boto3Error)
+CONDITIONAL_WRITE_CONFLICTS = ("PreconditionFailed", "ConditionalRequestConflict")
 
 def create_s3_client() -> "S3Client":
     return boto3.client(
@@ -76,3 +77,22 @@ class S3StorageAdapter:
             self.client.put_object(Bucket=self.bucket, Key=key, Body=data)
         except S3_ERRORS as error:
             raise StorageError(f"Failed to write '{key}' to bucket '{self.bucket}'") from error
+
+    def write_bytes_if_absent(self, key: str, data: bytes) -> bool:
+        """Write data only if the key does not exist yet.
+
+        Uses a conditional write (``If-None-Match: *``) that the storage checks
+        atomically, so when several callers try at once exactly one succeeds.
+        Returns False, and writes nothing, when the key already exists.
+        Raises StorageError for any other storage failure.
+        """
+        error_message = f"Failed to write '{key}' to bucket '{self.bucket}'"
+        try:
+            self.client.put_object(Bucket=self.bucket, Key=key, Body=data, IfNoneMatch="*")
+        except ClientError as error:
+            if error.response["Error"]["Code"] in CONDITIONAL_WRITE_CONFLICTS:
+                return False
+            raise StorageError(error_message) from error
+        except S3_ERRORS as error:
+            raise StorageError(error_message) from error
+        return True

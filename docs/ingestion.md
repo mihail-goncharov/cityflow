@@ -142,7 +142,7 @@ ERROR cityflow.ingestion: Ingestion of 2025-01 failed at stage validate: <reason
 | `config` | a required environment variable is missing | `.env` not passed with `--env-file`, or a variable left out |
 | `download` | the source could not be fetched completely | network error, 4xx/5xx from the source, truncated transfer after all retries |
 | `validate` | the file breaks the raw data contract | invalid Parquet, missing required columns, incompatible types, checksum differs from the baseline, empty file |
-| `publish` | storage or manifest handling failed | storage unreachable (tunnel closed), upload or manifest write error, checksum conflict with published data (section 7) |
+| `publish` | storage or manifest handling failed | storage unreachable (tunnel closed), upload or manifest write error, checksum conflict with published or pending data, another run already publishing the month (section 7) |
 
 If the SSH tunnel is closed, the `publish` failure does not appear at once: the
 storage client waits for its own timeouts first, so the error can take tens of
@@ -161,7 +161,10 @@ fails validation never reaches storage.
 
 For a month with no manifest yet, `publish_raw_file` runs these steps in order:
 
-1. Write `manifest.json` with `publication_status: "pending"`.
+1. Create `manifest.json` with `publication_status: "pending"`, only if none
+   exists. The storage checks this atomically (`If-None-Match: *`), so when two
+   runs start together exactly one continues; the other fails with
+   `PublicationError` before it writes anything.
 2. Upload the Parquet file to its Raw object key.
 3. Verify the uploaded object (section 6.1).
 4. Rewrite `manifest.json` with `publication_status: "published"`.
@@ -199,7 +202,8 @@ existing manifest is read and decides what happens:
 | none | publish (section 6) | `published` |
 | `published`, same SHA-256 | nothing is written | `skipped` |
 | `published`, different SHA-256 | nothing is written, ingestion fails | `PublicationError` |
-| `pending` | verify the existing object, then complete or publish again (section 8) | `recovered` or `published` |
+| `pending`, same SHA-256 | verify the existing object, then complete or publish again (section 8) | `recovered` or `published` |
+| `pending`, different SHA-256 | nothing is written, ingestion fails | `PublicationError` |
 
 A second run with the same file therefore leaves exactly one data object and
 one manifest for the month and reports `skipped`.
@@ -212,6 +216,18 @@ published data automatically: the existing object and manifest are kept as they
 are, and the error names the object key and both checksums. Which version is
 correct is decided by manual review.
 
+### Pending publication with a different checksum
+
+A `pending` manifest does not say whether its run is still active or was
+interrupted. A run that finds one with a **different** SHA-256 therefore fails
+with `PublicationError` and writes nothing: overwriting could leave a
+`published` manifest that describes one file while storage holds another.
+Runs with the **same** SHA-256 are safe, because they write identical bytes.
+
+If the earlier run was interrupted for good (for example the source file
+changed), check that no run is active, delete the month's `manifest.json` and
+any partial data object, and run ingestion again.
+
 
 ## 8. Recovery after an interrupted run
 
@@ -219,15 +235,17 @@ A `pending` manifest means a previous run stopped after step 1 and before
 step 4. The next run verifies the object in storage against the local file
 before it changes anything.
 
-| What failed in the previous run | State in storage | What the rerun does | Result |
-|---|---|---|---|
-| upload (step 2), e.g. a network or storage error | manifest `pending`, object missing or incomplete | verification fails, so steps 1–4 run again and the upload overwrites the object | `published` |
-| verification (step 3) | manifest `pending`, object with wrong bytes | same as above | `published` |
-| final manifest write (step 4) | manifest `pending`, complete object | verification passes, so only a new `published` manifest is written; the object is not uploaded again | `recovered` |
+| What failed in the previous run | State in storage | What the rerun does                                                                                                | Result |
+|---|---|--------------------------------------------------------------------------------------------------------------------|---|
+| upload (step 2), e.g. a network or storage error | manifest `pending`, object missing or incomplete | verification fails, so the pending manifest is rewritten, steps 2-4 run again and the upload overwrites the object | `published` |
+| verification (step 3) | manifest `pending`, object with wrong bytes | same as above                                                                                                      | `published` |
+| final manifest write (step 4) | manifest `pending`, complete object | verification passes, so only a new `published` manifest is written; the object is not uploaded again               | `recovered` |
 
 Overwriting a `pending` object is safe because it was never marked
-`published`, so no reader may rely on it. The recovered manifest is built from
-the current run, so it describes exactly the bytes that were just verified.
+`published` and the `pending` manifest has the same SHA-256 as the current
+file (with a different SHA-256 the run fails, section 7). The recovered
+manifest is built from the current run, so it describes exactly the bytes that
+were just verified.
 
 No manual steps are needed for recovery: fix the cause of the failure, then run
 ingestion for the same month again.
