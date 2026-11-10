@@ -91,8 +91,13 @@ def publish_raw_file(
     - ``published`` with the same SHA-256: do nothing (rerun is a no-op);
     - ``published`` with a different SHA-256: raise PublicationError and
       leave the existing object untouched;
-    - ``pending``: verify the object and complete the manifest;
-      if the object is missing or different, publish it again.
+    - ``pending`` with a different SHA-256: raise PublicationError and leave
+      the object and manifest untouched, because the run that wrote it may
+      still be active (or was interrupted with other bytes) and its upload
+      must not be overwritten;
+    - ``pending`` with the same SHA-256 (the same file): verify the object and
+      complete the manifest; if the object is missing or different, publish it
+      again. Two runs with the same bytes cannot corrupt each other.
 
     Returns "published", "skipped" or "recovered".
     """
@@ -120,6 +125,13 @@ def publish_raw_file(
             f"Object '{object_key}' is already published with SHA-256 "
             f"{existing.sha256}, but the new file has SHA-256 {sha256}; "
             f"existing data was kept for review"
+        )
+
+    if existing.sha256 != sha256:
+        raise PublicationError(
+            f"Object '{object_key}' has an unfinished (pending) publication with "
+            f"SHA-256 {existing.sha256}, but the new file has SHA-256 {sha256}; "
+            f"another run may be active, so nothing was overwritten"
         )
 
     try:
