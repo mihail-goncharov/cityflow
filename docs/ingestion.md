@@ -14,7 +14,10 @@ fails validation never reaches storage.
 
 For a month with no manifest yet, `publish_raw_file` runs these steps in order:
 
-1. Write `manifest.json` with `publication_status: "pending"`.
+1. Create `manifest.json` with `publication_status: "pending"`, only if none
+   exists. The storage checks this atomically (`If-None-Match: *`), so when two
+   runs start together exactly one continues; the other fails with
+   `PublicationError` before it writes anything.
 2. Upload the Parquet file to its Raw object key.
 3. Verify the uploaded object (section 2).
 4. Rewrite `manifest.json` with `publication_status: "published"`.
@@ -87,9 +90,6 @@ Runs with the **same** SHA-256 are safe, because they write identical bytes.
 If the earlier run was interrupted for good (for example the source file
 changed), check that no run is active, delete the month's `manifest.json` and
 any partial data object, and run ingestion again.
-
-Known limit: two runs for the same month that start at the same moment, before
-either has written `pending`, are not prevented. Run one month at a time.
 
 
 ## 4. Recovery after an interrupted run
