@@ -1,3 +1,4 @@
+import dataclasses
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from cityflow.ingestion.manifest import (
     manifest_to_json,
     read_manifest,
     write_manifest,
+    write_manifest_if_absent,
 )
 from cityflow.storage.s3_adapter import S3StorageAdapter
 
@@ -42,6 +44,15 @@ def test_build_manifest_key_replaces_file_name():
 def test_write_manifest_can_be_read_back(adapter: S3StorageAdapter):
     manifest_key = build_manifest_key(DATA_KEY)
     write_manifest(adapter, manifest_key, MANIFEST)
+    assert read_manifest(adapter, manifest_key) == MANIFEST
+
+
+def test_write_manifest_if_absent_creates_only_once(adapter: S3StorageAdapter):
+    manifest_key = build_manifest_key(DATA_KEY)
+    other = dataclasses.replace(MANIFEST, sha256="0" * 64)
+
+    assert write_manifest_if_absent(adapter, manifest_key, MANIFEST) is True
+    assert write_manifest_if_absent(adapter, manifest_key, other) is False
     assert read_manifest(adapter, manifest_key) == MANIFEST
 
 
