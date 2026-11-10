@@ -1,21 +1,12 @@
 from pathlib import Path
 
-import boto3
 import pytest
-from moto import mock_aws
 
 from cityflow.storage.s3_adapter import S3StorageAdapter, StorageError
 
 BUCKET = "test-bucket"
 KEY = "raw/example.txt"
-
-
-@pytest.fixture
-def adapter():
-    with mock_aws():
-        client = boto3.client("s3", region_name="us-east-1")
-        client.create_bucket(Bucket=BUCKET)
-        yield S3StorageAdapter(BUCKET, client)
+CONTENT = b"Content"
 
 
 def upload_text_file(adapter: S3StorageAdapter, tmp_path: Path, key: str, text: str = "CityFlow") -> None:
@@ -83,3 +74,36 @@ def test_list_objects_returns_all_pages(adapter):
         adapter.client.put_object(Bucket=BUCKET, Key=key, Body=b"")
 
     assert sorted(adapter.list_objects()) == sorted(keys)
+
+
+def test_written_bytes_can_be_read_back(adapter):
+    adapter.write_bytes(KEY, CONTENT)
+    assert adapter.read_bytes(KEY) == CONTENT
+
+
+def test_write_bytes_if_absent_writes_a_new_key(adapter):
+    assert adapter.write_bytes_if_absent(KEY, CONTENT) is True
+    assert adapter.read_bytes(KEY) == CONTENT
+
+
+def test_write_bytes_if_absent_keeps_existing_data(adapter):
+    adapter.write_bytes(KEY, CONTENT)
+
+    assert adapter.write_bytes_if_absent(KEY, b"other") is False
+    assert adapter.read_bytes(KEY) == CONTENT
+
+
+def test_write_bytes_if_absent_missing_bucket_raises_storage_error(adapter):
+    missing_bucket_adapter = S3StorageAdapter("no-such-bucket", adapter.client)
+    with pytest.raises(StorageError):
+        missing_bucket_adapter.write_bytes_if_absent(KEY, CONTENT)
+
+
+def test_read_bytes_missing_key_returns_none(adapter):
+    assert adapter.read_bytes(KEY) is None
+
+
+def test_read_bytes_missing_bucket_raises_storage_error(adapter):
+    missing_bucket_adapter = S3StorageAdapter("no-such-bucket", adapter.client)
+    with pytest.raises(StorageError):
+        missing_bucket_adapter.read_bytes(KEY)
