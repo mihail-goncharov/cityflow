@@ -125,6 +125,23 @@ client, for example:
 uv run --env-file .env python <script.py>
 ```
 
+### 5. Ingestion
+
+With the tunnel open and `S3_BUCKET`, `S3_ENDPOINT_URL`, `S3_ACCESS_KEY` and
+`S3_SECRET_KEY` set in `.env`, one command downloads, validates and publishes a
+month of Yellow Taxi data to the Raw layer:
+
+```
+uv run --locked --env-file .env python -m cityflow.ingestion --month 2025-01
+```
+
+January 2025 is published to
+`raw/nyc_tlc/yellow_taxi/year=2025/month=01/yellow_tripdata_2025-01.parquet`
+with a `manifest.json` beside it. Running the command again reports the month
+as `skipped`. A failure logs the failed stage and exits with code 1. See the
+[ingestion runbook](docs/ingestion.md) for configuration, object naming, reruns
+and failure recovery.
+
 ## Tests and coverage
 
 Install development dependencies with `uv sync --locked`, then run:
@@ -260,3 +277,8 @@ evening rush hour.
   quality problems found in January 2025, with counts, examples and handling.
 - [`docs/source_manifest.json`](docs/source_manifest.json): URL, size and
   SHA-256 of the downloaded source file.
+- [`docs/ingestion.md`](docs/ingestion.md): ingestion runbook, covering
+  configuration, execution, object naming, reruns and failure recovery, with a
+  [sample manifest](docs/examples/ingestion_manifest_2025-01.json).
+- [`docs/raw_data_contract.md`](docs/raw_data_contract.md): checks a raw file
+  must pass before publication.
