@@ -193,6 +193,6 @@ compose.yaml              RustFS service (Docker Compose)
 - Data: [NYC TLC Trip Record Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page),
   published by the New York City Taxi and Limousine Commission. Column
   meanings: [Yellow Trips Data Dictionary](https://www.nyc.gov/assets/tlc/downloads/pdf/data_dictionary_trip_records_yellow.pdf).
-- **Mihail Goncearov**: profiling, storage adapter, ingestion pipeline and
+- **Mihail Goncharov**: profiling, storage adapter, ingestion pipeline and
   tests.
 - **Alexandr Corneev**: mentor; infrastructure, CI/CD and project setup.
