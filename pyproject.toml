@@ -3,7 +3,7 @@ name = "cityflow"
 version = "0.1.0"
 description = "CityFlow Analytics: NYC Yellow Taxi data platform (mentorship project)"
 authors = [
-    { name = "Goncharov Mihail", email = "mihail.goncharov.dev@gmail.com" }
+    { name = "Mihail Goncearov", email = "mihail.goncharov.dev@gmail.com" }
 ]
 requires-python = ">=3.13"
 dependencies = [
