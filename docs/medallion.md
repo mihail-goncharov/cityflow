@@ -263,6 +263,9 @@ example (made-up numbers for 10 rows, to show overlap):
 }
 ```
 
+`rule_counts` always lists every reason code from section 6, with 0 for a rule
+that did not fire. The example shows only three of them to stay short.
+
 Here the rules fired 4 times for 3 rejected rows because one row broke two
 rules. `accepted_rows + rejected_rows == input_rows` must hold, or the run
 fails.
