@@ -1,5 +1,7 @@
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 
@@ -10,8 +12,11 @@ from cityflow.ingestion.pipeline import build_object_key
 from cityflow.ingestion.validate import check_contents_readable, check_schema
 from cityflow.storage.s3_adapter import S3StorageAdapter
 from cityflow.transform.bronze import to_bronze
+from cityflow.transform.layers import build_quality_summary_key
+from cityflow.transform.publish import publish_layer, remove_stale_objects
 from cityflow.transform.silver import to_silver
 from cityflow.transform.split import split_accepted_rejected
+from cityflow.transform.summary import build_quality_summary
 
 
 class TransformInputError(Exception):
@@ -36,6 +41,10 @@ class LayerFiles:
     bronze: Path
     silver: Path
     quarantine: Path
+
+
+def count_rows(path: Path) -> int:
+    return int(pl.scan_parquet(path).select(pl.len()).collect().item())
 
 
 def read_raw_input(storage: S3StorageAdapter, month: str, work_dir: Path) -> RawInput:
@@ -114,3 +123,74 @@ def write_layer_files(raw: RawInput, work_dir: Path) -> LayerFiles:
     return LayerFiles(
         bronze=bronze_path, silver=silver_path, quarantine=quarantine_path
     )
+
+
+def transform_month(
+    storage: S3StorageAdapter, month: str, work_dir: Path
+) -> dict[str, Any]:
+    """Transform one month of published Raw data and publish the layers.
+
+    Downloads and verifies the Raw file, writes Bronze, Silver and Quarantine
+    locally, and builds the quality summary. The summary fails with
+    CountMismatchError if the row counts do not add up, before anything is
+    uploaded. Then Bronze, Quarantine, the summary and Silver are published in
+    that order, and stale objects are removed after each layer. Silver is last,
+    so its published manifest means the whole month is done. Returns the
+    quality summary.
+    """
+    raw_input = read_raw_input(storage, month, work_dir)
+    layer_files = write_layer_files(raw_input, work_dir)
+    silver = pl.scan_parquet(layer_files.silver)
+    quarantine = pl.scan_parquet(layer_files.quarantine)
+    bronze_path = layer_files.bronze
+    silver_path = layer_files.silver
+    quarantine_path = layer_files.quarantine
+
+    summary = build_quality_summary(
+        month=raw_input.month,
+        source_sha256=raw_input.sha256,
+        input_rows=count_rows(path=raw_input.path),
+        silver=silver,
+        rejected=quarantine,
+    )
+    storage.write_bytes(
+        build_quality_summary_key(raw_input.month), json.dumps(summary).encode()
+    )
+
+    publish_layer(
+        storage=storage,
+        layer="bronze",
+        month=raw_input.month,
+        local_path=bronze_path,
+        source_object_key=raw_input.object_key,
+        source_sha256=raw_input.sha256,
+        row_count=count_rows(bronze_path),
+        work_dir=work_dir,
+    )
+    remove_stale_objects(storage=storage, layer="bronze", month=raw_input.month)
+
+    publish_layer(
+        storage=storage,
+        layer="quarantine",
+        month=raw_input.month,
+        local_path=layer_files.quarantine,
+        source_object_key=raw_input.object_key,
+        source_sha256=raw_input.sha256,
+        row_count=count_rows(quarantine_path),
+        work_dir=work_dir,
+    )
+    remove_stale_objects(storage=storage, layer="quarantine", month=raw_input.month)
+
+    publish_layer(
+        storage=storage,
+        layer="silver",
+        month=raw_input.month,
+        local_path=layer_files.silver,
+        source_object_key=raw_input.object_key,
+        source_sha256=raw_input.sha256,
+        row_count=count_rows(silver_path),
+        work_dir=work_dir,
+    )
+    remove_stale_objects(storage=storage, layer="silver", month=raw_input.month)
+
+    return summary
