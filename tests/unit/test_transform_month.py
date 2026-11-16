@@ -1,6 +1,7 @@
 import dataclasses
 import hashlib
 import json
+import logging
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -16,7 +17,9 @@ from cityflow.ingestion.manifest import (
     write_manifest,
 )
 from cityflow.ingestion.pipeline import build_object_key
+from cityflow.ingestion.validate import ValidationError
 from cityflow.storage.s3_adapter import S3StorageAdapter
+from cityflow.transform import __main__ as cli
 from cityflow.transform import pipeline as pipeline_module
 from cityflow.transform.layer_manifest import read_layer_manifest
 from cityflow.transform.layers import (
@@ -79,12 +82,23 @@ TRIPS = [
 
 
 def publish_raw(
-    adapter: S3StorageAdapter, tmp_path: Path, trips: list[dict[str, Any]]
+    adapter: S3StorageAdapter,
+    tmp_path: Path,
+    trips: list[dict[str, Any]],
+    *,
+    drop_column: str | None = None,
 ) -> bytes:
-    """Store a Raw file with a published Raw manifest; return the Raw bytes."""
+    """Store a Raw file with a published Raw manifest; return the Raw bytes.
+
+    ``drop_column`` removes a column first, as for a file that breaks the
+    raw data contract but was published anyway.
+    """
     source = tmp_path / "source" / FILENAME
     source.parent.mkdir(exist_ok=True)
-    pl.DataFrame(trips, schema=SCHEMA).write_parquet(source)
+    frame = pl.DataFrame(trips, schema=SCHEMA)
+    if drop_column is not None:
+        frame = frame.drop(drop_column)
+    frame.write_parquet(source)
     adapter.upload_object(source, RAW_KEY)
     manifest = build_manifest(
         bucket=adapter.bucket,
@@ -332,6 +346,121 @@ def test_a_failed_count_check_publishes_nothing(
         run(adapter, tmp_path)
 
     assert sorted(adapter.list_objects("")) == keys_before
+
+
+@pytest.mark.parametrize(
+    "column",
+    ["fare_amount", "trip_distance", "tpep_pickup_datetime", "PULocationID"],
+)
+def test_raw_file_missing_a_required_column_fails_and_writes_nothing(
+    adapter: S3StorageAdapter, tmp_path: Path, column: str
+) -> None:
+    publish_raw(adapter, tmp_path, TRIPS, drop_column=column)
+    keys_before = sorted(adapter.list_objects(""))
+
+    with pytest.raises(ValidationError, match=f"missing: .*{column}"):
+        run(adapter, tmp_path)
+
+    assert sorted(adapter.list_objects("")) == keys_before
+
+
+def test_raw_file_that_is_not_parquet_fails_and_writes_nothing(
+    adapter: S3StorageAdapter, tmp_path: Path
+) -> None:
+    junk = tmp_path / "junk.parquet"
+    junk.write_bytes(b"this is not parquet")
+    adapter.upload_object(junk, RAW_KEY)
+    manifest = build_manifest(
+        bucket=adapter.bucket,
+        object_key=RAW_KEY,
+        sha256=sha256_of(junk),
+        url="https://example.test/file.parquet",
+        month=MONTH,
+        local_path=junk,
+    )
+    write_manifest(
+        adapter,
+        build_manifest_key(RAW_KEY),
+        dataclasses.replace(manifest, publication_status="published"),
+    )
+    keys_before = sorted(adapter.list_objects(""))
+
+    with pytest.raises(ValidationError, match="not a readable Parquet file"):
+        run(adapter, tmp_path)
+
+    assert sorted(adapter.list_objects("")) == keys_before
+
+
+@pytest.fixture()
+def cli_storage(adapter: S3StorageAdapter, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make the command use the in-memory bucket instead of a real S3 client."""
+    monkeypatch.setenv("S3_BUCKET", adapter.bucket)
+    monkeypatch.setattr(cli, "create_s3_client", lambda: adapter.client)
+
+
+def test_command_publishes_a_month_end_to_end(
+    adapter: S3StorageAdapter,
+    raw_bytes: bytes,
+    cli_storage: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="cityflow.transform")
+
+    exit_code = cli.main(["--month", MONTH])
+
+    assert exit_code == 0
+    assert "5 input, 3 accepted, 2 rejected rows" in caplog.text
+    for layer in LAYERS:
+        manifest = read_layer_manifest(adapter, build_layer_manifest_key(layer, MONTH))
+        assert manifest is not None
+        assert manifest.publication_status == "published"
+    stored = adapter.read_bytes(build_quality_summary_key(MONTH))
+    assert stored is not None
+    assert json.loads(stored)["accepted_rows"] == 3
+
+
+def test_command_run_twice_gives_the_same_objects_and_counts(
+    adapter: S3StorageAdapter, raw_bytes: bytes, cli_storage: None
+) -> None:
+    assert cli.main(["--month", MONTH]) == 0
+    keys = sorted(adapter.list_objects(""))
+    frames = {layer: stored_frame(adapter, layer) for layer in LAYERS}
+    summary = adapter.read_bytes(build_quality_summary_key(MONTH))
+
+    assert cli.main(["--month", MONTH]) == 0
+
+    assert sorted(adapter.list_objects("")) == keys
+    assert adapter.read_bytes(build_quality_summary_key(MONTH)) == summary
+    for layer in LAYERS:
+        assert stored_frame(adapter, layer).equals(frames[layer]), layer
+
+
+def test_command_fails_at_the_input_stage_for_a_broken_raw_file(
+    adapter: S3StorageAdapter,
+    tmp_path: Path,
+    cli_storage: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    publish_raw(adapter, tmp_path, TRIPS, drop_column="fare_amount")
+    keys_before = sorted(adapter.list_objects(""))
+
+    exit_code = cli.main(["--month", MONTH])
+
+    assert exit_code == 1
+    assert "failed at stage input" in caplog.text
+    assert "fare_amount" in caplog.text
+    assert sorted(adapter.list_objects("")) == keys_before
+
+
+def test_command_fails_at_the_input_stage_when_the_month_is_not_ingested(
+    adapter: S3StorageAdapter, cli_storage: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    exit_code = cli.main(["--month", MONTH])
+
+    assert exit_code == 1
+    assert "failed at stage input" in caplog.text
+    assert "ingest the month first" in caplog.text
+    assert adapter.list_objects("") == []
 
 
 def sha256_of_bytes(data: bytes) -> str:
