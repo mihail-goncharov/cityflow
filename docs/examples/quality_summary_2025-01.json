@@ -1,0 +1,32 @@
+{
+  "source_month": "2025-01",
+  "source_sha256": "9af277e4c0d3f9deb30644da822981e1e7df6af58313170fd3aa8a474485488a",
+  "input_rows": 3475226,
+  "accepted_rows": 3251195,
+  "rejected_rows": 224031,
+  "rule_counts": {
+    "fare_not_positive": 145516,
+    "fare_too_high": 3,
+    "distance_not_positive": 90893,
+    "distance_too_high": 122,
+    "dropoff_before_pickup": 124,
+    "zero_duration_with_distance": 1235,
+    "duration_too_long": 1233,
+    "pickup_outside_month": 22,
+    "missing_pickup_datetime": 0,
+    "missing_dropoff_datetime": 0,
+    "missing_fare": 0,
+    "missing_distance": 0,
+    "non_finite_fare": 0,
+    "non_finite_distance": 0,
+    "missing_pickup_location": 0,
+    "missing_dropoff_location": 0,
+    "invalid_pickup_location": 0,
+    "invalid_dropoff_location": 0
+  },
+  "flag_counts": {
+    "has_missing_flex_fields": 413164,
+    "is_unknown_pickup_zone": 8209,
+    "is_unknown_dropoff_zone": 21385
+  }
+}

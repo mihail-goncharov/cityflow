@@ -192,8 +192,9 @@ fails the whole run (section 9) instead of producing rows.
 
 Rows from `data_quality_findings.md` that this document rejects *in addition*:
 nulls and non-finite values in the required columns, and the location policy
-below. The accepted count is therefore expected to be equal to or slightly below
-3,251,195; any difference must be explained after the first real run.
+below. The accepted count was therefore expected to be equal to or slightly
+below 3,251,195. The January run gave exactly 3,251,195: every additional rule
+found 0 rows (section 7.6).
 
 ### 7.2 Retain rules
 
@@ -270,6 +271,39 @@ Here the rules fired 4 times for 3 rejected rows because one row broke two
 rules. `accepted_rows + rejected_rows == input_rows` must hold, or the run
 fails.
 
+The real January 2025 summary is in
+[`examples/quality_summary_2025-01.json`](examples/quality_summary_2025-01.json)
+(formatted for reading; the stored file has the same content).
+
+### 7.6 January 2025 result and the baseline
+
+First real run (2026-11-16), compared with the profiling baseline in
+[`data_quality_findings.md`](data_quality_findings.md):
+
+| | Pipeline | Baseline |
+|---|---:|---:|
+| Input rows | 3,475,226 | 3,475,226 |
+| Accepted (Silver) | 3,251,195 | 3,251,195 |
+| Rejected (Quarantine) | 224,031 | 224,031 |
+
+- **The eight original rules match the baseline row for row:**
+  `fare_not_positive` 145,516, `distance_not_positive` 90,893,
+  `zero_duration_with_distance` 1,235, `duration_too_long` 1,233,
+  `dropoff_before_pickup` 124, `distance_too_high` 122,
+  `pickup_outside_month` 22, `fare_too_high` 3.
+- **The ten additional rules found 0 rows.** January 2025 has no null or
+  non-finite fares, distances or timestamps, and no location IDs outside 1 to
+  265. This is why the accepted count is not lower than the baseline. The rules
+  stay in place for later months.
+- **Overlap.** The rules fired 239,148 times for 224,031 rejected rows: 15,117
+  hits come from rows that broke more than one rule (for example a zero fare and
+  a zero distance). Each of those rows is in Quarantine once.
+- **Flags count Silver rows only,** so they are lower than the findings, which
+  counted all rows: `has_missing_flex_fields` 413,164 against 540,149 Flex Fare
+  rows in total (the rest were rejected for other reasons);
+  `is_unknown_pickup_zone` 8,209 and `is_unknown_dropoff_zone` 21,385, while
+  the findings' 28,357 counts rows with either side unknown, among all rows.
+
 
 ## 8. Reruns and stale output
 
@@ -289,5 +323,23 @@ fails.
   success.
 - The data is read lazily and written in a streaming way, one month at a time,
   so a month does not have to fit in memory (January is about 467 MB in memory
-  when fully loaded; the VM has 8 GB). Runtime and observed memory for the
-  January run will be recorded here after the first real run.
+  when fully loaded; the VM has 8 GB).
+
+### 9.1 Observed January 2025 run
+
+Measured on 2026-11-16 on a Windows development machine, with RustFS reached
+through the SSH tunnel (README, section 4):
+
+| Measure | Value |
+|---|---|
+| Runtime | 249 s (4.2 min), end to end |
+| Peak memory | 1,975 MB (peak working set of the Python process, including Polars) |
+| Output sizes | Bronze 67.5 MiB, Silver 61.1 MiB, Quarantine 4.2 MiB (Raw is about 59 MB) |
+
+- Peak memory is about a quarter of the VM's 8 GB, so January fits with room
+  to spare.
+- The runtime was not split by stage. Most of it is probably network transfer
+  through the tunnel: the run downloads Raw and uploads each layer, and each
+  upload is verified by downloading it again (by SHA-256, see `ingestion.md`),
+  so about 330 MB crosses the tunnel. Running on the VM next to RustFS should be
+  faster; this has not been measured yet.

@@ -194,6 +194,15 @@ An invalid `--month` exits with code 2. Nothing is uploaded when `input` or
 `cbd_congestion_fee`, which TLC added in January 2025. Earlier months fail at
 the `transform` stage.
 
+**January 2025 result.** 3,475,226 input rows, 3,251,195 accepted and 224,031
+rejected, the same as the profiling baseline below ("Initial findings"). The
+additional rules (missing or non-finite values, invalid location IDs) found no
+rows in January. The run took about 4 minutes with a peak of about 2 GB of
+memory, measured on a development machine through the SSH tunnel. The full
+summary is in
+[`docs/examples/quality_summary_2025-01.json`](docs/examples/quality_summary_2025-01.json),
+and the comparison with the baseline in `docs/medallion.md` (section 7.6).
+
 Schemas, quality rules, units, the time zone assumption and paths are in
 [`docs/medallion.md`](docs/medallion.md).
 
@@ -339,4 +348,6 @@ evening rush hour.
   must pass before publication.
 - [`docs/medallion.md`](docs/medallion.md): Bronze, Silver and Quarantine
   schemas, quality rules, money units, time zone assumption, storage paths,
-  reruns and the quality summary.
+  reruns, the quality summary, and the January 2025 result with runtime and
+  memory, with a
+  [sample quality summary](docs/examples/quality_summary_2025-01.json).
