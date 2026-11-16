@@ -142,6 +142,61 @@ as `skipped`. A failure logs the failed stage and exits with code 1. See the
 [ingestion runbook](docs/ingestion.md) for configuration, object naming, reruns
 and failure recovery.
 
+### 6. Transform (Bronze, Silver, Quarantine)
+
+Ingest the month first (section 5). Then, with the tunnel open and the same
+`.env`, one command builds and publishes the Bronze, Silver and Quarantine
+layers for the month:
+
+```
+uv run --locked --env-file .env python -m cityflow.transform --month 2025-01
+```
+
+The command reads the published Raw file from storage and never downloads from
+TLC. It checks that the Raw manifest is `published`, that the file matches its
+SHA-256 and that the required columns are present. It then writes the three
+layers as local Parquet files, streaming, and checks that
+`accepted + rejected = input` before anything is uploaded.
+
+For January 2025 it publishes, in this order:
+
+| Layer | Object | Contents |
+|---|---|---|
+| Bronze | `bronze/nyc_tlc/yellow_taxi/year=2025/month=01/yellow_tripdata.parquet` | every source row, unchanged, plus lineage columns |
+| Quarantine | `quarantine/.../year=2025/month=01/yellow_tripdata.parquet` | rejected rows with all their `reject_reasons` |
+| Silver | `silver/.../year=2025/month=01/yellow_tripdata.parquet` | accepted rows, money in cents, pickup date and hour, trip duration, flags |
+
+Each object has a `manifest.json` beside it, and `quality_summary.json` (input,
+accepted and rejected rows, per-rule and per-flag counts) sits next to Silver.
+Silver is published last, so its `published` manifest means the whole month is
+done. On success the log ends with a line such as
+`Transform of 2025-01 finished: <n> input, <n> accepted, <n> rejected rows`.
+
+**Reruns.** Running the command again rebuilds the month from the same Raw file
+and overwrites the layers, giving the same rows and counts. Any other object in
+a layer's month folder, for example a file from an older run, is removed. An
+interrupted run leaves a `pending` manifest, and the next run redoes it.
+
+**Failures.** The log names the failed stage and the command exits with code 1:
+
+| Stage | Cause |
+|---|---|
+| `config` | an `S3_*` variable is missing |
+| `input` | the month is not ingested, its Raw manifest is still `pending`, the file does not match its manifest, or it breaks the raw data contract |
+| `transform` | writing the layers failed, or the row counts do not add up |
+| `publish` | an uploaded object does not match its local file |
+| `storage` | any other storage error (download or upload) |
+
+An invalid `--month` exits with code 2. Nothing is uploaded when `input` or
+`transform` fails.
+
+**Known limitation.** Silver needs all ten money columns, including
+`cbd_congestion_fee`, which TLC added in January 2025. Earlier months fail at
+the `transform` stage.
+
+Schemas, quality rules, units, the time zone assumption and paths are in
+[`docs/medallion.md`](docs/medallion.md).
+
 ## Tests and coverage
 
 Install development dependencies with `uv sync --locked`, then run:
@@ -282,3 +337,6 @@ evening rush hour.
   [sample manifest](docs/examples/ingestion_manifest_2025-01.json).
 - [`docs/raw_data_contract.md`](docs/raw_data_contract.md): checks a raw file
   must pass before publication.
+- [`docs/medallion.md`](docs/medallion.md): Bronze, Silver and Quarantine
+  schemas, quality rules, money units, time zone assumption, storage paths,
+  reruns and the quality summary.
