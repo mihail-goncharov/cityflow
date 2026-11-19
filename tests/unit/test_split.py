@@ -5,6 +5,7 @@ import polars as pl
 import pytest
 
 from cityflow.transform.bronze import to_bronze
+from cityflow.transform.rules import OTHER_MONEY_COLUMNS
 from cityflow.transform.split import add_reject_reasons, split_accepted_rejected
 
 MONTH = "2025-01"
@@ -18,6 +19,8 @@ SCHEMA = {
     "trip_distance": pl.Float64,
     "fare_amount": pl.Float64,
     "passenger_count": pl.Int64,
+    "total_amount": pl.Float64,
+    **{column: pl.Float64 for column in OTHER_MONEY_COLUMNS},
 }
 
 
@@ -31,6 +34,8 @@ def trip(**overrides: Any) -> dict[str, Any]:
         "trip_distance": 3.2,
         "fare_amount": 17.5,
         "passenger_count": 1,
+        "total_amount": 21.0,
+        **{column: 0.5 for column in OTHER_MONEY_COLUMNS},
     }
     row.update(overrides)
     return row
@@ -85,6 +90,24 @@ def test_null_and_nan_values_get_their_own_single_reason() -> None:
         ["missing_fare"],
         ["non_finite_distance"],
         ["missing_pickup_location"],
+    ]
+
+
+def test_money_problems_are_rejected_with_their_own_reasons() -> None:
+    _, rejected = split(
+        [
+            trip(total_amount=None),
+            trip(total_amount=NAN),
+            trip(tip_amount=float("inf")),
+            trip(congestion_surcharge=None),
+        ]
+    )
+
+    # A null in a nullable money column is kept, so the last trip is accepted.
+    assert rejected["reject_reasons"].to_list() == [
+        ["missing_total_amount"],
+        ["non_finite_total_amount"],
+        ["non_finite_money_amount"],
     ]
 
 

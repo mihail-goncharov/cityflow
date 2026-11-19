@@ -4,6 +4,12 @@ import polars as pl
 
 from cityflow.ingestion.download import parse_month
 from cityflow.transform.reasons import RejectReason
+from cityflow.transform.silver import MONEY_COLUMNS
+
+# Money columns with no reason code of their own (fare and total have one).
+OTHER_MONEY_COLUMNS = [
+    column for column in MONEY_COLUMNS if column not in ("fare_amount", "total_amount")
+]
 
 MAX_FARE = 1000
 MAX_DISTANCE_MILES = 200
@@ -145,6 +151,25 @@ def non_finite_distance() -> pl.Expr:
     return _non_finite("trip_distance")
 
 
+def missing_total_amount() -> pl.Expr:
+    """True when total_amount is null (Silver's total_amount_cents is not null)."""
+    return _missing("total_amount")
+
+
+def non_finite_total_amount() -> pl.Expr:
+    """True when total_amount is NaN or infinite."""
+    return _non_finite("total_amount")
+
+
+def non_finite_money_amount() -> pl.Expr:
+    """True when any money column other than fare and total is NaN or infinite.
+
+    Fare and total have their own reason codes. Null in these columns is
+    allowed and stays null in Silver.
+    """
+    return pl.any_horizontal(*[_non_finite(column) for column in OTHER_MONEY_COLUMNS])
+
+
 def missing_pickup_location() -> pl.Expr:
     """True when PULocationID is null."""
     return _missing(PICKUP_LOCATION)
@@ -186,6 +211,9 @@ def reject_rules(month: str) -> dict[RejectReason, pl.Expr]:
         RejectReason.MISSING_DISTANCE: missing_distance(),
         RejectReason.NON_FINITE_FARE: non_finite_fare(),
         RejectReason.NON_FINITE_DISTANCE: non_finite_distance(),
+        RejectReason.MISSING_TOTAL_AMOUNT: missing_total_amount(),
+        RejectReason.NON_FINITE_TOTAL_AMOUNT: non_finite_total_amount(),
+        RejectReason.NON_FINITE_MONEY_AMOUNT: non_finite_money_amount(),
         RejectReason.MISSING_PICKUP_LOCATION: missing_pickup_location(),
         RejectReason.MISSING_DROPOFF_LOCATION: missing_dropoff_location(),
         RejectReason.INVALID_PICKUP_LOCATION: invalid_pickup_location(),

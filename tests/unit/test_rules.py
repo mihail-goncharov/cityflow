@@ -5,6 +5,7 @@ import pytest
 
 from cityflow.transform.reasons import RejectReason
 from cityflow.transform.rules import (
+    OTHER_MONEY_COLUMNS,
     distance_not_positive,
     distance_too_high,
     dropoff_before_pickup,
@@ -19,8 +20,11 @@ from cityflow.transform.rules import (
     missing_fare,
     missing_pickup_datetime,
     missing_pickup_location,
+    missing_total_amount,
     non_finite_distance,
     non_finite_fare,
+    non_finite_money_amount,
+    non_finite_total_amount,
     pickup_outside_month,
     reject_rules,
     zero_duration_with_distance,
@@ -243,6 +247,37 @@ def test_non_finite_rules_flag_nan_and_infinite_but_not_null(rule, column) -> No
         True,
         True,
     ]
+
+
+def test_total_amount_rules_flag_null_and_non_finite_separately() -> None:
+    # VALUES: -1, 0, 0.01, 1000, 1000.01, null, NaN, inf, -inf
+    assert evaluate(missing_total_amount(), "total_amount", VALUES) == [
+        False, False, False, False, False, True, False, False, False,
+    ]
+    assert evaluate(non_finite_total_amount(), "total_amount", VALUES) == [
+        False, False, False, False, False, False, True, True, True,
+    ]
+
+
+@pytest.mark.parametrize("column", OTHER_MONEY_COLUMNS)
+def test_non_finite_money_amount_flags_each_other_money_column(column: str) -> None:
+    frame = pl.DataFrame(
+        {name: [1.0] * len(VALUES) for name in OTHER_MONEY_COLUMNS}
+    ).with_columns(pl.Series(column, VALUES, dtype=pl.Float64))
+
+    result = frame.select(non_finite_money_amount().alias("hit")).to_series()
+
+    assert result.null_count() == 0
+    # Null is allowed in these columns; only NaN and infinities are rejected.
+    assert result.to_list() == [
+        False, False, False, False, False, False, True, True, True,
+    ]
+
+
+def test_other_money_columns_exclude_fare_and_total() -> None:
+    assert "fare_amount" not in OTHER_MONEY_COLUMNS
+    assert "total_amount" not in OTHER_MONEY_COLUMNS
+    assert len(OTHER_MONEY_COLUMNS) == 8
 
 
 def test_missing_datetime_rules_flag_the_null_timestamp() -> None:

@@ -183,10 +183,23 @@ assumptions, not TLC rules (see `data_quality_findings.md`).
 | `missing_distance` | `trip_distance` is null | |
 | `non_finite_fare` | `fare_amount` is NaN or infinite | |
 | `non_finite_distance` | `trip_distance` is NaN or infinite | |
+| `missing_total_amount` | `total_amount` is null | Silver's `total_amount_cents` is not null |
+| `non_finite_total_amount` | `total_amount` is NaN or infinite | cannot become `Int64` cents |
+| `non_finite_money_amount` | `extra`, `mta_tax`, `tip_amount`, `tolls_amount`, `improvement_surcharge`, `congestion_surcharge`, `Airport_fee` or `cbd_congestion_fee` is NaN or infinite | null is allowed in these columns |
 | `missing_pickup_location`, `missing_dropoff_location`, `invalid_pickup_location`, `invalid_dropoff_location` | location ID null, or outside 1 to 265 | see section 7.3 |
 
 Rules that need a null or non-finite value are skipped for that value, so a
 missing fare gives `missing_fare` only, not also `fare_not_positive`.
+
+Money columns and the Silver schema: every Silver column that is not null
+(`fare_amount_cents`, `total_amount_cents`) has a rule that rejects a null in
+its source, and every money column has a rule that rejects NaN and infinity,
+because those cannot be converted to `Int64` cents. Together this guarantees
+that the cents conversion in section 4.1 never fails and never produces a null
+in a not-null column. A null in a nullable money column (`extra`, `mta_tax`,
+`tip_amount`, `tolls_amount`, `improvement_surcharge`, `congestion_surcharge`,
+`Airport_fee`, `cbd_congestion_fee`) is kept as null. Negative values are kept
+for every money column except `fare_amount` (section 4.1).
 "Invalid" timestamps cannot occur in a typed Parquet file; an unreadable file
 fails the whole run (section 9) instead of producing rows.
 
@@ -291,10 +304,13 @@ First real run (2026-11-16), compared with the profiling baseline in
   `zero_duration_with_distance` 1,235, `duration_too_long` 1,233,
   `dropoff_before_pickup` 124, `distance_too_high` 122,
   `pickup_outside_month` 22, `fare_too_high` 3.
-- **The ten additional rules found 0 rows.** January 2025 has no null or
-  non-finite fares, distances or timestamps, and no location IDs outside 1 to
-  265. This is why the accepted count is not lower than the baseline. The rules
-  stay in place for later months.
+- **The ten additional rules that existed for this run found 0 rows.**
+  January 2025 has no null or non-finite fares, distances or timestamps, and no
+  location IDs outside 1 to 265. This is why the accepted count is not lower
+  than the baseline. The rules stay in place for later months. The three money
+  rules (`missing_total_amount`, `non_finite_total_amount`,
+  `non_finite_money_amount`) were added after the review of this run. Applied
+  to the same Raw file they also find 0 rows, so the counts above do not change.
 - **Overlap.** The rules fired 239,148 times for 224,031 rejected rows: 15,117
   hits come from rows that broke more than one rule (for example a zero fare and
   a zero distance). Each of those rows is in Quarantine once.
