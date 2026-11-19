@@ -1,6 +1,7 @@
 import polars as pl
 
 from cityflow.ingestion.download import parse_month
+from cityflow.ingestion.validate import ValidationError
 
 LINEAGE_COLUMNS = [
     "source_row_id",
@@ -27,7 +28,19 @@ def to_bronze(
     The other lineage values come from the Raw manifest and are the same for
     all rows. The result is lazy, so nothing is read until it is collected
     or written. See docs/medallion.md section 3.
+
+    Raises ValidationError, before anything is read, if the source already has
+    a column named like a lineage column: adding it would silently replace the
+    source values.
     """
+    collisions = [
+        name for name in source.collect_schema().names() if name in LINEAGE_COLUMNS
+    ]
+    if collisions:
+        raise ValidationError(
+            f"source columns collide with Bronze lineage columns: {collisions}"
+        )
+
     return source.with_row_index("source_row_id").with_columns(
         pl.col("source_row_id").cast(pl.Int64),
         pl.lit(parse_month(month)).alias("source_month"),

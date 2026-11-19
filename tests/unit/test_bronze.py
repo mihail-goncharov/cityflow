@@ -4,6 +4,7 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
+from cityflow.ingestion.validate import ValidationError
 from cityflow.transform.bronze import LINEAGE_COLUMNS, to_bronze
 
 MONTH = "2025-01"
@@ -97,6 +98,25 @@ def test_to_bronze_is_lazy() -> None:
     )
 
     assert isinstance(result, pl.LazyFrame)
+
+
+@pytest.mark.parametrize("column", LINEAGE_COLUMNS)
+def test_to_bronze_rejects_source_column_named_like_a_lineage_column(
+    column: str,
+) -> None:
+    source = make_source().with_columns(pl.lit("original").alias(column))
+
+    with pytest.raises(ValidationError, match=column):
+        bronze_of(source)
+
+
+def test_to_bronze_reports_all_colliding_columns() -> None:
+    source = make_source().with_columns(
+        pl.lit("x").alias("ingested_at"), pl.lit("y").alias("source_sha256")
+    )
+
+    with pytest.raises(ValidationError, match="ingested_at.*source_sha256"):
+        bronze_of(source)
 
 
 def test_to_bronze_rejects_invalid_month() -> None:
