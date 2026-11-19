@@ -57,6 +57,10 @@ Bronze keeps the 20 source columns **exactly as in Raw** (names, types, nulls,
 float money). Column order is not significant. Columns that TLC adds later are
 kept too (see the raw contract, section 4).
 
+A Raw file that already has a column named like one of the lineage columns
+below is not transformed: Bronze stops with an error that names the colliding
+columns, so a source value is never silently replaced.
+
 Lineage columns added by Bronze:
 
 | Column | Type | Nullable | Meaning |
