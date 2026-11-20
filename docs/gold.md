@@ -108,8 +108,38 @@ Metric definitions, units and rounding: [`kpi_dictionary.md`](kpi_dictionary.md)
 | Exact metric values | dbt unit tests (`unit_tests:` in YAML) with small input rows and the exact expected output: duplicate-looking trips, unknown zones, cross-midnight trips, nullable fields and empty input |
 
 **Fixtures.** Unit tests define their input rows in YAML. A full `dbt build` in
-CI reads a small Silver Parquet fixture written by a committed script with
-fixed rows, so CI needs neither RustFS credentials nor the real dataset.
+CI reads a small Silver Parquet fixture, so CI needs neither RustFS credentials
+nor the real dataset:
+
+```bash
+uv run python -m cityflow.gold.fixture <out_dir>                         # nine trips
+uv run python -m cityflow.gold.fixture <out_dir> --variant empty         # same columns, no rows
+uv run python -m cityflow.gold.fixture <out_dir> --variant invalid_zone  # one zone not in the lookup
+```
+
+The command prints the `CITYFLOW_SILVER_ROOT` to use. `cityflow.gold.fixture`
+writes nine January 2025 trips as Raw rows and passes them through the real
+Bronze and Silver transform, so the fixture has exactly the Silver schema and
+fails if any trip would be rejected. Each trip covers one case:
+
+| Trip | Case |
+|---|---|
+| 0, 1 | identical-looking trips, both counted |
+| 2 | pickup zone 264 (Unknown) |
+| 3 | pickup zone 265 (Outside of NYC) at 23:55, dropoff on the next day: belongs to 1 January, hour 23 |
+| 4 | Flex Fare trip with null optional fields |
+| 5 | second trip in the same date and hour as trip 4 |
+| 6, 7 | fares of 1,000 and 1,001 cents in one hour: the average fare is exactly 1,000.5 and must round half away from zero to 1,001 |
+| 8 | positive fare with a negative adjustment: total charged is -800 cents |
+
+Expected totals, calculated by hand: 1 January has 4 trips, fare 5,500 cents,
+total charged 7,500 cents; 2 January has 5 trips, fare 6,301 cents, total
+charged 6,401 cents.
+
+The `invalid_zone` variant gives trip 0 the pickup zone 999, which is not in
+the zone lookup. Real Silver cannot contain it, because the reject rules allow
+only 1 to 265. It exists only to check that Gold fails on such a trip instead
+of losing it in the zone join.
 
 
 ## 6. Reruns
