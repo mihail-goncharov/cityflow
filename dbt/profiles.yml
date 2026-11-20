@@ -1,0 +1,8 @@
+cityflow:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      # Relative to the directory dbt is run from (the repository root).
+      path: "{{ env_var('CITYFLOW_DUCKDB_PATH', 'dbt/cityflow.duckdb') }}"
+      threads: 2

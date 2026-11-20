@@ -43,7 +43,7 @@ from environment variables or dbt variables:
 |---|---|---|---|
 | `source_months` | dbt var | `["2025-01"]` | Months of Silver to read (`YYYY-MM`). |
 | `CITYFLOW_SILVER_ROOT` | env var | none, required | Folder that holds `year=<YYYY>/month=<MM>/yellow_tripdata.parquet`: a local folder (fixtures, staged files) or `s3://<bucket>/silver/nyc_tlc/yellow_taxi`. |
-| `CITYFLOW_DUCKDB_PATH` | env var | `target/cityflow.duckdb` | The DuckDB file that holds the built tables. |
+| `CITYFLOW_DUCKDB_PATH` | env var | `dbt/cityflow.duckdb` | The DuckDB file that holds the built tables. A relative path is relative to the directory dbt is run from (the repository root). |
 | `S3_ENDPOINT_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | env vars | none | The same variables as ingestion, only needed to read from RustFS. |
 
 - `dbt/profiles.yml` is committed. It contains no secrets, only

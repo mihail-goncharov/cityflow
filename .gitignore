@@ -38,6 +38,8 @@ coverage.xml
 target/
 dbt_packages/
 logs/
+# Anonymous per-machine ID that dbt writes next to profiles.yml
+.user.yml
 
 # ----- IDE / OS -----
 .DS_Store
