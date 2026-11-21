@@ -57,6 +57,10 @@ Bronze keeps the 20 source columns **exactly as in Raw** (names, types, nulls,
 float money). Column order is not significant. Columns that TLC adds later are
 kept too (see the raw contract, section 4).
 
+A Raw file that already has a column named like one of the lineage columns
+below is not transformed: Bronze stops with an error that names the colliding
+columns, so a source value is never silently replaced.
+
 Lineage columns added by Bronze:
 
 | Column | Type | Nullable | Meaning |
@@ -100,6 +104,8 @@ suffix `_cents`:
   columns (`congestion_surcharge`, `airport_fee`) are null in accepted rows.
 - **Sign:** only `fare_amount` has a sign rule (section 6). Other negative
   amounts are kept as they are.
+- **Range:** every accepted amount is small enough to convert to `Int64` cents
+  exactly (section 7.1, `money_out_of_range`).
 - The source column `Airport_fee` is renamed `airport_fee_cents`; the other
   Silver names are lowercase too.
 
@@ -183,10 +189,38 @@ assumptions, not TLC rules (see `data_quality_findings.md`).
 | `missing_distance` | `trip_distance` is null | |
 | `non_finite_fare` | `fare_amount` is NaN or infinite | |
 | `non_finite_distance` | `trip_distance` is NaN or infinite | |
+| `missing_total_amount` | `total_amount` is null | Silver's `total_amount_cents` is not null |
+| `non_finite_total_amount` | `total_amount` is NaN or infinite | cannot become `Int64` cents |
+| `non_finite_money_amount` | `extra`, `mta_tax`, `tip_amount`, `tolls_amount`, `improvement_surcharge`, `congestion_surcharge`, `Airport_fee` or `cbd_congestion_fee` is NaN or infinite | null is allowed in these columns |
+| `money_out_of_range` | the absolute value of `total_amount` or of any column in the row above is greater than 1,000,000,000 | exactly 1,000,000,000 is accepted; a technical bound, not a business limit |
 | `missing_pickup_location`, `missing_dropoff_location`, `invalid_pickup_location`, `invalid_dropoff_location` | location ID null, or outside 1 to 265 | see section 7.3 |
 
 Rules that need a null or non-finite value are skipped for that value, so a
 missing fare gives `missing_fare` only, not also `fare_not_positive`.
+
+Money columns and the Silver schema: every Silver column that is not null
+(`fare_amount_cents`, `total_amount_cents`) has a rule that rejects a null in
+its source, and every money column has a rule that rejects NaN and infinity,
+because those cannot be converted to `Int64` cents.
+
+Every money column is also bounded. `fare_amount` must be above 0 and at most
+1,000 (`fare_not_positive`, `fare_too_high`); every other money column must be
+within ±1,000,000,000 dollars (`money_out_of_range`). The second bound is a
+technical safety limit, not a business rule: a finite value can still be too
+large for cents, for example `1e17 * 100` overflows `Int64` (largest value
+about 9.2 × 10^18), and `Float64` stops representing every cent exactly above
+about 9 × 10^13 dollars. The bound keeps every accepted amount far below both
+limits. It applies only to finite values: null and non-finite values have
+their own reason codes. In January 2025 the largest amount in any column is
+about 863,000 dollars, so this rule rejects no rows there.
+
+Together these rules guarantee that, for every accepted row, the cents
+conversion in section 4.1 succeeds, is exact to the cent, and never produces a
+null in a not-null column. A null in a nullable money column (`extra`, `mta_tax`,
+`tip_amount`, `tolls_amount`, `improvement_surcharge`, `congestion_surcharge`,
+`Airport_fee`, `cbd_congestion_fee`) is kept as null. Negative values are kept
+for every money column except `fare_amount` (section 4.1).
+
 "Invalid" timestamps cannot occur in a typed Parquet file; an unreadable file
 fails the whole run (section 9) instead of producing rows.
 
