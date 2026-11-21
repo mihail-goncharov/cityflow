@@ -5,6 +5,8 @@ import pytest
 
 from cityflow.transform.reasons import RejectReason
 from cityflow.transform.rules import (
+    MAX_MONEY_AMOUNT,
+    OTHER_MONEY_COLUMNS,
     distance_not_positive,
     distance_too_high,
     dropoff_before_pickup,
@@ -19,8 +21,12 @@ from cityflow.transform.rules import (
     missing_fare,
     missing_pickup_datetime,
     missing_pickup_location,
+    missing_total_amount,
+    money_out_of_range,
     non_finite_distance,
     non_finite_fare,
+    non_finite_money_amount,
+    non_finite_total_amount,
     pickup_outside_month,
     reject_rules,
     zero_duration_with_distance,
@@ -243,6 +249,67 @@ def test_non_finite_rules_flag_nan_and_infinite_but_not_null(rule, column) -> No
         True,
         True,
     ]
+
+
+def test_total_amount_rules_flag_null_and_non_finite_separately() -> None:
+    # VALUES: -1, 0, 0.01, 1000, 1000.01, null, NaN, inf, -inf
+    assert evaluate(missing_total_amount(), "total_amount", VALUES) == [
+        False, False, False, False, False, True, False, False, False,
+    ]
+    assert evaluate(non_finite_total_amount(), "total_amount", VALUES) == [
+        False, False, False, False, False, False, True, True, True,
+    ]
+
+
+def money_frame(column: str, values: list[float | None]) -> pl.DataFrame:
+    """Every money column except total filled with 1.0; one column gets the values."""
+    return pl.DataFrame(
+        {name: [1.0] * len(values) for name in ["total_amount", *OTHER_MONEY_COLUMNS]}
+    ).with_columns(pl.Series(column, values, dtype=pl.Float64))
+
+
+@pytest.mark.parametrize("column", OTHER_MONEY_COLUMNS)
+def test_non_finite_money_amount_flags_each_other_money_column(column: str) -> None:
+    result = money_frame(column, VALUES).select(non_finite_money_amount().alias("hit"))
+
+    assert result["hit"].null_count() == 0
+    # Null is allowed in these columns; only NaN and infinities are rejected.
+    assert result["hit"].to_list() == [
+        False, False, False, False, False, False, True, True, True,
+    ]
+
+
+MONEY_VALUES = [
+    -MAX_MONEY_AMOUNT - 0.01,
+    -MAX_MONEY_AMOUNT,
+    0.0,
+    MAX_MONEY_AMOUNT,
+    MAX_MONEY_AMOUNT + 0.01,
+    1e17,
+    None,
+    NAN,
+    INF,
+]
+
+
+@pytest.mark.parametrize("column", ["total_amount", *OTHER_MONEY_COLUMNS])
+def test_money_out_of_range_flags_each_money_column(column: str) -> None:
+    result = money_frame(column, MONEY_VALUES).select(money_out_of_range().alias("hit"))
+
+    assert result["hit"].null_count() == 0
+    # The limit itself is accepted in both directions. Null, NaN and infinity
+    # have their own reason codes and are not "out of range".
+    assert result["hit"].to_list() == [
+        True, False, False, False, True, True, False, False, False,
+    ]
+
+
+def test_money_out_of_range_does_not_apply_to_fare_amount() -> None:
+    frame = money_frame("total_amount", [1.0]).with_columns(
+        pl.lit(1e17).alias("fare_amount")
+    )
+
+    assert frame.select(money_out_of_range()).item() is False
 
 
 def test_missing_datetime_rules_flag_the_null_timestamp() -> None:
