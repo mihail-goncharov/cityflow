@@ -1,0 +1,60 @@
+version: 2
+
+models:
+  - name: int_trips_with_pickup_zone
+    description: >
+      Trips from stg_silver_trips with the borough, zone name and service zone
+      of the pickup zone, joined on the zone ID (docs/gold.md section 1). One
+      row per trip: the join neither drops nor multiplies trips. Zones 264 and
+      265 are kept.
+    columns:
+      - name: source_month
+        description: Month the trip was ingested for, YYYY-MM.
+        data_tests:
+          - not_null
+      - name: source_row_id
+        description: >
+          Zero-based position of the row in the Raw file. Together with
+          source_month it identifies a trip.
+        data_tests:
+          - not_null
+      - name: pickup_date
+        description: Pickup date in New York local time, as computed by Silver.
+        data_tests:
+          - not_null
+      - name: pickup_location_id
+        description: Pickup TLC taxi zone ID, the join key to dim_zone.
+        data_tests:
+          - not_null
+      - name: is_unknown_pickup_zone
+        description: True when the pickup zone is 264 (Unknown) or 265 (Outside of NYC).
+        data_tests:
+          - not_null
+      - name: trip_distance_miles
+        description: Trip distance in miles.
+        data_tests:
+          - not_null
+      - name: trip_duration_seconds
+        description: Dropoff time minus pickup time, in whole seconds.
+        data_tests:
+          - not_null
+      - name: fare_amount_cents
+        description: Metered fare in integer US cents.
+        data_tests:
+          - not_null
+      - name: total_amount_cents
+        description: Total amount charged to passengers in integer US cents. It can be negative.
+        data_tests:
+          - not_null
+      - name: pickup_borough
+        description: Borough of the pickup zone. Null only if the zone is missing from dim_zone.
+        data_tests:
+          - not_null
+      - name: pickup_zone
+        description: Name of the pickup zone. Null only if the zone is missing from dim_zone.
+        data_tests:
+          - not_null
+      - name: pickup_service_zone
+        description: Service zone of the pickup zone. Null only if the zone is missing from dim_zone.
+        data_tests:
+          - not_null
