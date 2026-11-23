@@ -71,6 +71,12 @@ models:
           this ID, never on zone names.
         data_tests:
           - not_null
+          # A trip whose zone is missing from the lookup fails the build here,
+          # instead of disappearing from the zone mart in a join.
+          - relationships:
+              arguments:
+                to: ref('dim_zone')
+                field: location_id
       - name: is_unknown_pickup_zone
         description: True when the pickup zone is 264 (Unknown) or 265 (Outside of NYC).
         data_tests:
