@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: mart_daily_trips
+    description: >
+      Daily trip metrics, one row per pickup date (docs/gold.md section 3).
+      A trip that crosses midnight belongs to its pickup date. A date with no
+      trips has no row. Fare and total charged are amounts charged to
+      passengers, not revenue or profit; cash tips are not recorded. Metric
+      definitions: docs/kpi_dictionary.md.
+    columns:
+      - name: pickup_date
+        description: >
+          Pickup date in New York local time, as computed by Silver. The key of
+          this table.
+        data_tests:
+          - unique
+          - not_null
+      - name: source_month
+        description: >
+          Month of the Silver file the trips come from, YYYY-MM. Not part of
+          the key: one pickup date belongs to exactly one month.
+        data_tests:
+          - not_null
+      - name: trip_count
+        description: Number of accepted trips on this date. Identical-looking trips are counted separately.
+        data_tests:
+          - not_null
+      - name: total_fare_cents
+        description: Sum of the metered fare in US cents. Not revenue.
+        data_tests:
+          - not_null
+      - name: total_charged_cents
+        description: >
+          Sum of the total amount charged to passengers in US cents. Not
+          revenue; excludes cash tips; can include negative adjustments.
+        data_tests:
+          - not_null
+      - name: avg_trip_distance_miles
+        description: Average trip distance in miles, rounded to 2 decimals.
+        data_tests:
+          - not_null
+      - name: avg_trip_duration_seconds
+        description: Average trip duration in seconds, rounded to 1 decimal.
+        data_tests:
+          - not_null
