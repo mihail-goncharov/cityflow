@@ -1,0 +1,62 @@
+version: 2
+
+models:
+  - name: stg_silver_trips
+    description: >
+      Silver trips for the months in source_months, with the columns Gold uses
+      (docs/gold.md section 1). One row per Silver row: no filtering, no
+      deduplication, no quality rules. Identical-looking trips are separate
+      rows with different source_row_id values.
+    columns:
+      - name: source_row_id
+        description: >
+          Zero-based position of the row in the Raw file. Together with
+          source_month it identifies a trip across all layers.
+        data_tests:
+          - not_null
+      - name: source_month
+        description: Month the trip was ingested for, YYYY-MM.
+        data_tests:
+          - not_null
+      - name: pickup_date
+        description: >
+          Calendar date of the pickup in New York local time, as computed by
+          Silver. A trip that crosses midnight belongs to this date.
+        data_tests:
+          - not_null
+      - name: pickup_hour
+        description: Hour of the pickup, 0 to 23, as computed by Silver.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+                quote: false
+      - name: pickup_location_id
+        description: >
+          Pickup TLC taxi zone ID (Silver PULocationID). Join to dim_zone on
+          this ID, never on zone names.
+        data_tests:
+          - not_null
+      - name: is_unknown_pickup_zone
+        description: True when the pickup zone is 264 (Unknown) or 265 (Outside of NYC).
+        data_tests:
+          - not_null
+      - name: trip_distance_miles
+        description: Trip distance in miles, as reported by the taximeter.
+        data_tests:
+          - not_null
+      - name: trip_duration_seconds
+        description: Dropoff time minus pickup time, in whole seconds.
+        data_tests:
+          - not_null
+      - name: fare_amount_cents
+        description: Metered fare in integer US cents. Never null.
+        data_tests:
+          - not_null
+      - name: total_amount_cents
+        description: >
+          Total amount charged to passengers in integer US cents. It can be
+          negative. Cash tips are not recorded. Never null.
+        data_tests:
+          - not_null
