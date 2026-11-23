@@ -1,6 +1,39 @@
 version: 2
 
 models:
+  - name: dim_zone
+    description: >
+      One row per TLC taxi zone, from the committed taxi_zone_lookup seed
+      (docs/gold.md section 4). IDs 264 (Unknown) and 265 (Outside of NYC)
+      are kept with their TLC labels. Join on location_id, never on zone
+      names, which are not unique.
+    columns:
+      - name: location_id
+        description: TLC taxi zone ID, 1 to 265. The key of this table.
+        data_tests:
+          - unique
+          - not_null
+      - name: borough
+        description: >
+          Borough name from TLC. It is the text "Unknown" for 264 and "N/A"
+          for 265, as in the lookup file.
+        data_tests:
+          - not_null
+      - name: zone
+        description: >
+          Zone name from TLC. Not unique, so never a join key. It is "N/A" for
+          264 and "Outside of NYC" for 265.
+        data_tests:
+          - not_null
+      - name: service_zone
+        description: TLC service zone, for example "Yellow Zone" or "Boro Zone".
+        data_tests:
+          - not_null
+      - name: is_unknown_zone
+        description: True for 264 (Unknown) and 265 (Outside of NYC).
+        data_tests:
+          - not_null
+
   - name: stg_silver_trips
     description: >
       Silver trips for the months in source_months, with the columns Gold uses
