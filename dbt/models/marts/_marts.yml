@@ -44,3 +44,44 @@ models:
         description: Average trip duration in seconds, rounded to 1 decimal.
         data_tests:
           - not_null
+
+  - name: mart_hourly_demand
+    description: >
+      Hourly demand, one row per pickup date and pickup hour (docs/gold.md
+      section 3). An hour with no trips has no row. A trip that crosses
+      midnight belongs to its pickup hour. Fare is the metered fare, not
+      revenue. Metric definitions: docs/kpi_dictionary.md.
+    columns:
+      - name: pickup_date
+        description: Pickup date in New York local time, as computed by Silver. Part of the key.
+        data_tests:
+          - not_null
+      - name: pickup_hour
+        description: Pickup hour, 0 to 23, as computed by Silver. Part of the key.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+                quote: false
+      - name: source_month
+        description: >
+          Month of the Silver file the trips come from, YYYY-MM. Not part of
+          the key: one pickup date belongs to exactly one month.
+        data_tests:
+          - not_null
+      - name: trip_count
+        description: Number of accepted trips in this hour. Identical-looking trips are counted separately.
+        data_tests:
+          - not_null
+      - name: total_fare_cents
+        description: Sum of the metered fare in US cents. Not revenue.
+        data_tests:
+          - not_null
+      - name: avg_fare_cents
+        description: >
+          Average metered fare per trip in US cents: total_fare_cents divided by
+          trip_count, rounded to whole cents, half away from zero. Reconcile
+          with total_fare_cents, not with this rounded value.
+        data_tests:
+          - not_null
