@@ -100,8 +100,11 @@ suffix `_cents`:
 - **Rounding:** `round(amount * 100)`, half away from zero. Source amounts
   have at most two decimals, so this only removes floating-point noise
   (for example `0.1 + 0.2` stored as `0.30000000000000004`).
-- **Nulls:** a null stays null. It is never turned into 0. Only the Flex Fare
-  columns (`congestion_surcharge`, `airport_fee`) are null in accepted rows.
+- **Nulls:** a null stays null. It is never turned into 0. `fare_amount` and
+  `total_amount` are never null in accepted rows (`missing_fare`,
+  `missing_total_amount`, section 7.1). Every other money column may be null
+  and keeps the null. In January 2025 only the Flex Fare columns
+  (`congestion_surcharge`, `Airport_fee`) actually contain nulls.
 - **Sign:** only `fare_amount` has a sign rule (section 6). Other negative
   amounts are kept as they are.
 - **Range:** every accepted amount is small enough to convert to `Int64` cents
@@ -130,11 +133,14 @@ Flags describe a row but never reject it:
 ### 4.4 Nullability in Silver
 
 Not null: the lineage columns, `tpep_pickup_datetime`, `tpep_dropoff_datetime`,
-`trip_distance`, `fare_amount_cents`, `total_amount_cents`, the derived
-columns and the flags.
-Nullable: `passenger_count`, `RatecodeID`, `store_and_fwd_flag`,
-`congestion_surcharge_cents`, `airport_fee_cents`. All other columns follow
-the source.
+`trip_distance`, `PULocationID`, `DOLocationID`, `fare_amount_cents`,
+`total_amount_cents`, the derived columns and the flags. Each of these has a
+reject rule for a null source value (section 7.1).
+Nullable: `passenger_count`, `RatecodeID`, `store_and_fwd_flag` and every
+other money column (`extra_cents`, `mta_tax_cents`, `tip_amount_cents`,
+`tolls_amount_cents`, `improvement_surcharge_cents`,
+`congestion_surcharge_cents`, `airport_fee_cents`, `cbd_congestion_fee_cents`).
+All other columns (`VendorID`, `payment_type`) follow the source.
 
 
 ## 5. Time zone
@@ -234,6 +240,7 @@ below. The accepted count is therefore expected to be equal to or slightly below
 | Condition | Handling |
 |---|---|
 | Flex Fare nulls (`passenger_count`, `RatecodeID`, `store_and_fwd_flag`, `congestion_surcharge`, `Airport_fee`) | Retained, nulls preserved, `has_missing_flex_fields = true` |
+| Null in another optional money column (`extra`, `mta_tax`, `tip_amount`, `tolls_amount`, `improvement_surcharge`, `cbd_congestion_fee`) | Retained, null preserved, no flag |
 | `PULocationID` or `DOLocationID` is 264 or 265 | Retained as Unknown / Outside of NYC, unknown-zone flag set |
 
 ### 7.3 Location ID policy (missing or unrecognized IDs)
