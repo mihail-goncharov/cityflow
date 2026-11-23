@@ -85,3 +85,59 @@ models:
           with total_fare_cents, not with this rounded value.
         data_tests:
           - not_null
+
+  - name: mart_pickup_zone_daily
+    description: >
+      Daily trip metrics per pickup zone, one row per pickup date and pickup
+      location ID (docs/gold.md section 3). Zones 264 (Unknown) and 265
+      (Outside of NYC) are kept, marked by is_unknown_pickup_zone, so the
+      totals reconcile with Silver; filter on that flag to leave them out of a
+      ranking. A zone with no trips on a date has no row. Fare is the metered
+      fare, not revenue. Metric definitions: docs/kpi_dictionary.md.
+    columns:
+      - name: pickup_date
+        description: Pickup date in New York local time, as computed by Silver. Part of the key.
+        data_tests:
+          - not_null
+      - name: pickup_location_id
+        description: Pickup TLC taxi zone ID. Part of the key.
+        data_tests:
+          - not_null
+      - name: source_month
+        description: >
+          Month of the Silver file the trips come from, YYYY-MM. Not part of
+          the key: one pickup date belongs to exactly one month.
+        data_tests:
+          - not_null
+      - name: pickup_borough
+        description: Borough of the pickup zone, from dim_zone. "Unknown" for 264 and "N/A" for 265.
+        data_tests:
+          - not_null
+      - name: pickup_zone
+        description: Name of the pickup zone, from dim_zone. Not unique, so not a key. "Outside of NYC" for 265.
+        data_tests:
+          - not_null
+      - name: pickup_service_zone
+        description: Service zone of the pickup zone, from dim_zone.
+        data_tests:
+          - not_null
+      - name: is_unknown_pickup_zone
+        description: True when the pickup zone is 264 (Unknown) or 265 (Outside of NYC).
+        data_tests:
+          - not_null
+      - name: trip_count
+        description: Number of accepted trips from this zone on this date. Identical-looking trips are counted separately.
+        data_tests:
+          - not_null
+      - name: total_fare_cents
+        description: Sum of the metered fare in US cents. Not revenue.
+        data_tests:
+          - not_null
+      - name: avg_trip_distance_miles
+        description: Average trip distance in miles, rounded to 2 decimals.
+        data_tests:
+          - not_null
+      - name: avg_trip_duration_seconds
+        description: Average trip duration in seconds, rounded to 1 decimal.
+        data_tests:
+          - not_null
