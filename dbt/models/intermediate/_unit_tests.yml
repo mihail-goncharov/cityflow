@@ -1,0 +1,57 @@
+version: 2
+
+# Exact expected values for the zone join (docs/gold.md section 5).
+
+unit_tests:
+  - name: int_trips_with_pickup_zone_joins_on_the_id_not_the_name
+    description: >
+      Zones 56 and 57 share the name "Corona" in the TLC file. Each trip gets
+      exactly one row with its own zone ID, so a join on the name would have
+      multiplied them.
+    model: int_trips_with_pickup_zone
+    given:
+      - input: ref('stg_silver_trips')
+        rows:
+          - {source_month: '2025-01', source_row_id: 0, pickup_location_id: 56}
+          - {source_month: '2025-01', source_row_id: 1, pickup_location_id: 57}
+      - input: ref('dim_zone')
+        rows:
+          - {location_id: 56, borough: Queens, zone: Corona, service_zone: Boro Zone}
+          - {location_id: 57, borough: Queens, zone: Corona, service_zone: Boro Zone}
+    expect:
+      rows:
+        - {source_row_id: 0, pickup_location_id: 56, pickup_borough: Queens, pickup_zone: Corona, pickup_service_zone: Boro Zone}
+        - {source_row_id: 1, pickup_location_id: 57, pickup_borough: Queens, pickup_zone: Corona, pickup_service_zone: Boro Zone}
+
+  - name: int_trips_with_pickup_zone_keeps_unknown_zones
+    description: Trips in zones 264 and 265 keep their rows and their TLC labels.
+    model: int_trips_with_pickup_zone
+    given:
+      - input: ref('stg_silver_trips')
+        rows:
+          - {source_month: '2025-01', source_row_id: 0, pickup_location_id: 264}
+          - {source_month: '2025-01', source_row_id: 1, pickup_location_id: 265}
+      - input: ref('dim_zone')
+        rows:
+          - {location_id: 264, borough: Unknown, zone: 'N/A', service_zone: 'N/A'}
+          - {location_id: 265, borough: 'N/A', zone: Outside of NYC, service_zone: 'N/A'}
+    expect:
+      rows:
+        - {source_row_id: 0, pickup_location_id: 264, pickup_borough: Unknown, pickup_zone: 'N/A', pickup_service_zone: 'N/A'}
+        - {source_row_id: 1, pickup_location_id: 265, pickup_borough: 'N/A', pickup_zone: Outside of NYC, pickup_service_zone: 'N/A'}
+
+  - name: int_trips_with_pickup_zone_keeps_a_trip_whose_zone_is_missing
+    description: >
+      A trip whose zone ID is not in dim_zone is not dropped: it keeps its row
+      with null zone labels, so the not-null tests can see it.
+    model: int_trips_with_pickup_zone
+    given:
+      - input: ref('stg_silver_trips')
+        rows:
+          - {source_month: '2025-01', source_row_id: 0, pickup_location_id: 999}
+      - input: ref('dim_zone')
+        rows:
+          - {location_id: 132, borough: Queens, zone: JFK Airport, service_zone: Airports}
+    expect:
+      rows:
+        - {source_row_id: 0, pickup_location_id: 999, pickup_borough: null, pickup_zone: null, pickup_service_zone: null}

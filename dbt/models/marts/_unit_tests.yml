@@ -1,0 +1,142 @@
+version: 2
+
+# Exact expected values for the mart SQL (docs/gold.md section 5). Each test
+# gives a few trip rows and the output computed by hand. Only the columns a model
+# reads need to be given; the rest are null.
+#
+# What these tests do not cover: which date or hour a trip belongs to. Silver
+# decides that (docs/medallion.md section 5) and the marts only group by it, so a
+# trip that crosses midnight is checked on the Silver fixture (trip 3), through
+# the reconciliation tests and the example in docs/gold.md.
+
+unit_tests:
+  # ---------------------------------------------------------------- mart_daily_trips
+  - name: mart_daily_trips_counts_duplicates_and_sums_exact_money
+    description: >
+      Two identical-looking trips are both counted, a negative total charged is
+      summed as it is, and the averages are rounded to 2 and 1 decimals.
+    model: mart_daily_trips
+    given:
+      - input: ref('stg_silver_trips')
+        rows:
+          # 2025-01-01: rows 0 and 1 look identical, row 2 has a negative total.
+          - {source_month: '2025-01', source_row_id: 0, pickup_date: '2025-01-01', trip_distance_miles: 2.0, trip_duration_seconds: 600, fare_amount_cents: 1000, total_amount_cents: 1500}
+          - {source_month: '2025-01', source_row_id: 1, pickup_date: '2025-01-01', trip_distance_miles: 2.0, trip_duration_seconds: 600, fare_amount_cents: 1000, total_amount_cents: 1500}
+          - {source_month: '2025-01', source_row_id: 2, pickup_date: '2025-01-01', trip_distance_miles: 4.0, trip_duration_seconds: 1200, fare_amount_cents: 2000, total_amount_cents: -800}
+          # 2025-01-02: one trip.
+          - {source_month: '2025-01', source_row_id: 3, pickup_date: '2025-01-02', trip_distance_miles: 3.0, trip_duration_seconds: 900, fare_amount_cents: 1500, total_amount_cents: 2000}
+    expect:
+      rows:
+        # distance (2 + 2 + 4) / 3 = 2.666... -> 2.67; duration 2400 / 3 = 800.0
+        - {pickup_date: '2025-01-01', source_month: '2025-01', trip_count: 3, total_fare_cents: 4000, total_charged_cents: 2200, avg_trip_distance_miles: 2.67, avg_trip_duration_seconds: 800.0}
+        - {pickup_date: '2025-01-02', source_month: '2025-01', trip_count: 1, total_fare_cents: 1500, total_charged_cents: 2000, avg_trip_distance_miles: 3.0, avg_trip_duration_seconds: 900.0}
+
+  - name: mart_daily_trips_rounds_averages
+    description: Average distance rounds to 2 decimals and average duration to 1 decimal.
+    model: mart_daily_trips
+    given:
+      - input: ref('stg_silver_trips')
+        rows:
+          - {source_month: '2025-01', source_row_id: 0, pickup_date: '2025-01-01', trip_distance_miles: 1.0, trip_duration_seconds: 100, fare_amount_cents: 500, total_amount_cents: 500}
+          - {source_month: '2025-01', source_row_id: 1, pickup_date: '2025-01-01', trip_distance_miles: 1.0, trip_duration_seconds: 100, fare_amount_cents: 500, total_amount_cents: 500}
+          - {source_month: '2025-01', source_row_id: 2, pickup_date: '2025-01-01', trip_distance_miles: 1.01, trip_duration_seconds: 101, fare_amount_cents: 500, total_amount_cents: 500}
+    expect:
+      rows:
+        # distance 3.01 / 3 = 1.00333... -> 1.0; duration 301 / 3 = 100.333... -> 100.3
+        - {pickup_date: '2025-01-01', source_month: '2025-01', trip_count: 3, total_fare_cents: 1500, total_charged_cents: 1500, avg_trip_distance_miles: 1.0, avg_trip_duration_seconds: 100.3}
+
+  - name: mart_daily_trips_empty_input_gives_no_rows
+    description: No trips give no rows, not a row of zeros.
+    model: mart_daily_trips
+    given:
+      - input: ref('stg_silver_trips')
+        rows: []
+    expect:
+      rows: []
+
+  # ------------------------------------------------------------ mart_hourly_demand
+  - name: mart_hourly_demand_groups_by_date_and_hour
+    description: >
+      Trips are grouped by pickup date and hour. Identical-looking trips are
+      both counted. A trip at 23:00 stays in hour 23 of its pickup date.
+    model: mart_hourly_demand
+    given:
+      - input: ref('stg_silver_trips')
+        rows:
+          - {source_month: '2025-01', source_row_id: 0, pickup_date: '2025-01-01', pickup_hour: 10, fare_amount_cents: 1000}
+          - {source_month: '2025-01', source_row_id: 1, pickup_date: '2025-01-01', pickup_hour: 10, fare_amount_cents: 1000}
+          - {source_month: '2025-01', source_row_id: 2, pickup_date: '2025-01-01', pickup_hour: 10, fare_amount_cents: 2000}
+          - {source_month: '2025-01', source_row_id: 3, pickup_date: '2025-01-01', pickup_hour: 23, fare_amount_cents: 1500}
+          - {source_month: '2025-01', source_row_id: 4, pickup_date: '2025-01-02', pickup_hour: 10, fare_amount_cents: 700}
+    expect:
+      rows:
+        # 4000 / 3 = 1333.33... -> 1333
+        - {pickup_date: '2025-01-01', pickup_hour: 10, source_month: '2025-01', trip_count: 3, total_fare_cents: 4000, avg_fare_cents: 1333}
+        - {pickup_date: '2025-01-01', pickup_hour: 23, source_month: '2025-01', trip_count: 1, total_fare_cents: 1500, avg_fare_cents: 1500}
+        - {pickup_date: '2025-01-02', pickup_hour: 10, source_month: '2025-01', trip_count: 1, total_fare_cents: 700, avg_fare_cents: 700}
+
+  - name: mart_hourly_demand_rounds_a_tie_up
+    description: Fares of 1000 and 1001 cents average exactly 1000.5, which rounds up to 1001.
+    model: mart_hourly_demand
+    given:
+      - input: ref('stg_silver_trips')
+        rows:
+          - {source_month: '2025-01', source_row_id: 0, pickup_date: '2025-01-02', pickup_hour: 12, fare_amount_cents: 1000}
+          - {source_month: '2025-01', source_row_id: 1, pickup_date: '2025-01-02', pickup_hour: 12, fare_amount_cents: 1001}
+    expect:
+      rows:
+        - {pickup_date: '2025-01-02', pickup_hour: 12, source_month: '2025-01', trip_count: 2, total_fare_cents: 2001, avg_fare_cents: 1001}
+
+  - name: mart_hourly_demand_rounds_a_negative_tie_away_from_zero
+    description: >
+      The rule is half away from zero, so a tie of -1000.5 rounds to -1001.
+      Accepted Silver trips never have a negative fare; this documents the rule
+      itself.
+    model: mart_hourly_demand
+    given:
+      - input: ref('stg_silver_trips')
+        rows:
+          - {source_month: '2025-01', source_row_id: 0, pickup_date: '2025-01-02', pickup_hour: 12, fare_amount_cents: -1000}
+          - {source_month: '2025-01', source_row_id: 1, pickup_date: '2025-01-02', pickup_hour: 12, fare_amount_cents: -1001}
+    expect:
+      rows:
+        - {pickup_date: '2025-01-02', pickup_hour: 12, source_month: '2025-01', trip_count: 2, total_fare_cents: -2001, avg_fare_cents: -1001}
+
+  - name: mart_hourly_demand_empty_input_gives_no_rows
+    description: An empty month gives no rows, so no average divides by zero.
+    model: mart_hourly_demand
+    given:
+      - input: ref('stg_silver_trips')
+        rows: []
+    expect:
+      rows: []
+
+  # ------------------------------------------------------- mart_pickup_zone_daily
+  - name: mart_pickup_zone_daily_keeps_unknown_zones
+    description: >
+      Zones 264 (Unknown) and 265 (Outside of NYC) are rows like any other, with
+      their flag and labels. Identical-looking trips in one zone are both counted.
+    model: mart_pickup_zone_daily
+    given:
+      - input: ref('int_trips_with_pickup_zone')
+        rows:
+          - {source_month: '2025-01', source_row_id: 0, pickup_date: '2025-01-01', pickup_location_id: 132, pickup_borough: Queens, pickup_zone: JFK Airport, pickup_service_zone: Airports, is_unknown_pickup_zone: false, trip_distance_miles: 2.0, trip_duration_seconds: 600, fare_amount_cents: 1000}
+          - {source_month: '2025-01', source_row_id: 1, pickup_date: '2025-01-01', pickup_location_id: 132, pickup_borough: Queens, pickup_zone: JFK Airport, pickup_service_zone: Airports, is_unknown_pickup_zone: false, trip_distance_miles: 2.0, trip_duration_seconds: 600, fare_amount_cents: 1000}
+          - {source_month: '2025-01', source_row_id: 2, pickup_date: '2025-01-01', pickup_location_id: 264, pickup_borough: Unknown, pickup_zone: 'N/A', pickup_service_zone: 'N/A', is_unknown_pickup_zone: true, trip_distance_miles: 4.0, trip_duration_seconds: 1200, fare_amount_cents: 2000}
+          - {source_month: '2025-01', source_row_id: 3, pickup_date: '2025-01-01', pickup_location_id: 265, pickup_borough: 'N/A', pickup_zone: Outside of NYC, pickup_service_zone: 'N/A', is_unknown_pickup_zone: true, trip_distance_miles: 3.0, trip_duration_seconds: 900, fare_amount_cents: 1500}
+          - {source_month: '2025-01', source_row_id: 4, pickup_date: '2025-01-02', pickup_location_id: 132, pickup_borough: Queens, pickup_zone: JFK Airport, pickup_service_zone: Airports, is_unknown_pickup_zone: false, trip_distance_miles: 6.0, trip_duration_seconds: 1800, fare_amount_cents: 3000}
+    expect:
+      rows:
+        - {pickup_date: '2025-01-01', pickup_location_id: 132, source_month: '2025-01', pickup_borough: Queens, pickup_zone: JFK Airport, pickup_service_zone: Airports, is_unknown_pickup_zone: false, trip_count: 2, total_fare_cents: 2000, avg_trip_distance_miles: 2.0, avg_trip_duration_seconds: 600.0}
+        - {pickup_date: '2025-01-01', pickup_location_id: 264, source_month: '2025-01', pickup_borough: Unknown, pickup_zone: 'N/A', pickup_service_zone: 'N/A', is_unknown_pickup_zone: true, trip_count: 1, total_fare_cents: 2000, avg_trip_distance_miles: 4.0, avg_trip_duration_seconds: 1200.0}
+        - {pickup_date: '2025-01-01', pickup_location_id: 265, source_month: '2025-01', pickup_borough: 'N/A', pickup_zone: Outside of NYC, pickup_service_zone: 'N/A', is_unknown_pickup_zone: true, trip_count: 1, total_fare_cents: 1500, avg_trip_distance_miles: 3.0, avg_trip_duration_seconds: 900.0}
+        - {pickup_date: '2025-01-02', pickup_location_id: 132, source_month: '2025-01', pickup_borough: Queens, pickup_zone: JFK Airport, pickup_service_zone: Airports, is_unknown_pickup_zone: false, trip_count: 1, total_fare_cents: 3000, avg_trip_distance_miles: 6.0, avg_trip_duration_seconds: 1800.0}
+
+  - name: mart_pickup_zone_daily_empty_input_gives_no_rows
+    description: No trips give no rows.
+    model: mart_pickup_zone_daily
+    given:
+      - input: ref('int_trips_with_pickup_zone')
+        rows: []
+    expect:
+      rows: []
