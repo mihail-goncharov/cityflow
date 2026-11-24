@@ -6,6 +6,9 @@ from cityflow.ingestion.download import parse_month
 from cityflow.transform.reasons import RejectReason
 
 MAX_FARE = 1000
+# Technical bound, not a business limit: far below the Int64 cents overflow
+# and the Float64 exact-cent limit (docs/medallion.md section 7.1).
+MAX_MONEY_AMOUNT = 1_000_000_000
 MAX_DISTANCE_MILES = 200
 MAX_DURATION = timedelta(hours=5)
 
@@ -16,6 +19,20 @@ PICKUP = "tpep_pickup_datetime"
 DROPOFF = "tpep_dropoff_datetime"
 PICKUP_LOCATION = "PULocationID"
 DROPOFF_LOCATION = "DOLocationID"
+
+TOTAL_AMOUNT = "total_amount"
+# The money columns of docs/medallion.md section 4.1 without fare_amount and
+# total_amount, which have reason codes of their own.
+OTHER_MONEY_COLUMNS = [
+    "extra",
+    "mta_tax",
+    "tip_amount",
+    "tolls_amount",
+    "improvement_surcharge",
+    "congestion_surcharge",
+    "Airport_fee",
+    "cbd_congestion_fee",
+]
 
 
 def _finite_and(column: str, condition: pl.Expr) -> pl.Expr:
@@ -145,6 +162,39 @@ def non_finite_distance() -> pl.Expr:
     return _non_finite("trip_distance")
 
 
+def missing_total_amount() -> pl.Expr:
+    """True when total_amount is null (Silver's total_amount_cents is not null)."""
+    return _missing(TOTAL_AMOUNT)
+
+
+def non_finite_total_amount() -> pl.Expr:
+    """True when total_amount is NaN or infinite."""
+    return _non_finite(TOTAL_AMOUNT)
+
+
+def non_finite_money_amount() -> pl.Expr:
+    """True when any money column other than fare and total is NaN or infinite.
+
+    Null is allowed in these columns and never matches.
+    """
+    return pl.any_horizontal(*[_non_finite(column) for column in OTHER_MONEY_COLUMNS])
+
+
+def money_out_of_range() -> pl.Expr:
+    """True when total_amount or another money column is beyond MAX_MONEY_AMOUNT.
+
+    Only the size matters, so a large negative amount is out of range too;
+    exactly MAX_MONEY_AMOUNT is accepted. fare_amount has its own bounds. Null
+    and non-finite values never match: they have their own reason codes.
+    """
+    return pl.any_horizontal(
+        *[
+            _finite_and(column, pl.col(column).abs() > MAX_MONEY_AMOUNT)
+            for column in [TOTAL_AMOUNT, *OTHER_MONEY_COLUMNS]
+        ]
+    )
+
+
 def missing_pickup_location() -> pl.Expr:
     """True when PULocationID is null."""
     return _missing(PICKUP_LOCATION)
@@ -186,6 +236,10 @@ def reject_rules(month: str) -> dict[RejectReason, pl.Expr]:
         RejectReason.MISSING_DISTANCE: missing_distance(),
         RejectReason.NON_FINITE_FARE: non_finite_fare(),
         RejectReason.NON_FINITE_DISTANCE: non_finite_distance(),
+        RejectReason.MISSING_TOTAL_AMOUNT: missing_total_amount(),
+        RejectReason.NON_FINITE_TOTAL_AMOUNT: non_finite_total_amount(),
+        RejectReason.NON_FINITE_MONEY_AMOUNT: non_finite_money_amount(),
+        RejectReason.MONEY_OUT_OF_RANGE: money_out_of_range(),
         RejectReason.MISSING_PICKUP_LOCATION: missing_pickup_location(),
         RejectReason.MISSING_DROPOFF_LOCATION: missing_dropoff_location(),
         RejectReason.INVALID_PICKUP_LOCATION: invalid_pickup_location(),

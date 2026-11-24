@@ -57,6 +57,10 @@ Bronze keeps the 20 source columns **exactly as in Raw** (names, types, nulls,
 float money). Column order is not significant. Columns that TLC adds later are
 kept too (see the raw contract, section 4).
 
+A Raw file that already has a column named like one of the lineage columns
+below is not transformed: Bronze stops with an error that names the colliding
+columns, so a source value is never silently replaced.
+
 Lineage columns added by Bronze:
 
 | Column | Type | Nullable | Meaning |
@@ -96,10 +100,15 @@ suffix `_cents`:
 - **Rounding:** `round(amount * 100)`, half away from zero. Source amounts
   have at most two decimals, so this only removes floating-point noise
   (for example `0.1 + 0.2` stored as `0.30000000000000004`).
-- **Nulls:** a null stays null. It is never turned into 0. Only the Flex Fare
-  columns (`congestion_surcharge`, `airport_fee`) are null in accepted rows.
+- **Nulls:** a null stays null. It is never turned into 0. `fare_amount` and
+  `total_amount` are never null in accepted rows (`missing_fare`,
+  `missing_total_amount`, section 7.1). Every other money column may be null
+  and keeps the null. In January 2025 only the Flex Fare columns
+  (`congestion_surcharge`, `Airport_fee`) actually contain nulls.
 - **Sign:** only `fare_amount` has a sign rule (section 6). Other negative
   amounts are kept as they are.
+- **Range:** every accepted amount is small enough to convert to `Int64` cents
+  exactly (section 7.1, `money_out_of_range`).
 - The source column `Airport_fee` is renamed `airport_fee_cents`; the other
   Silver names are lowercase too.
 
@@ -124,11 +133,14 @@ Flags describe a row but never reject it:
 ### 4.4 Nullability in Silver
 
 Not null: the lineage columns, `tpep_pickup_datetime`, `tpep_dropoff_datetime`,
-`trip_distance`, `fare_amount_cents`, `total_amount_cents`, the derived
-columns and the flags.
-Nullable: `passenger_count`, `RatecodeID`, `store_and_fwd_flag`,
-`congestion_surcharge_cents`, `airport_fee_cents`. All other columns follow
-the source.
+`trip_distance`, `PULocationID`, `DOLocationID`, `fare_amount_cents`,
+`total_amount_cents`, the derived columns and the flags. Each of these has a
+reject rule for a null source value (section 7.1).
+Nullable: `passenger_count`, `RatecodeID`, `store_and_fwd_flag` and every
+other money column (`extra_cents`, `mta_tax_cents`, `tip_amount_cents`,
+`tolls_amount_cents`, `improvement_surcharge_cents`,
+`congestion_surcharge_cents`, `airport_fee_cents`, `cbd_congestion_fee_cents`).
+All other columns (`VendorID`, `payment_type`) follow the source.
 
 
 ## 5. Time zone
@@ -183,10 +195,38 @@ assumptions, not TLC rules (see `data_quality_findings.md`).
 | `missing_distance` | `trip_distance` is null | |
 | `non_finite_fare` | `fare_amount` is NaN or infinite | |
 | `non_finite_distance` | `trip_distance` is NaN or infinite | |
+| `missing_total_amount` | `total_amount` is null | Silver's `total_amount_cents` is not null |
+| `non_finite_total_amount` | `total_amount` is NaN or infinite | cannot become `Int64` cents |
+| `non_finite_money_amount` | `extra`, `mta_tax`, `tip_amount`, `tolls_amount`, `improvement_surcharge`, `congestion_surcharge`, `Airport_fee` or `cbd_congestion_fee` is NaN or infinite | null is allowed in these columns |
+| `money_out_of_range` | the absolute value of `total_amount` or of any column in the row above is greater than 1,000,000,000 | exactly 1,000,000,000 is accepted; a technical bound, not a business limit |
 | `missing_pickup_location`, `missing_dropoff_location`, `invalid_pickup_location`, `invalid_dropoff_location` | location ID null, or outside 1 to 265 | see section 7.3 |
 
 Rules that need a null or non-finite value are skipped for that value, so a
 missing fare gives `missing_fare` only, not also `fare_not_positive`.
+
+Money columns and the Silver schema: every Silver column that is not null
+(`fare_amount_cents`, `total_amount_cents`) has a rule that rejects a null in
+its source, and every money column has a rule that rejects NaN and infinity,
+because those cannot be converted to `Int64` cents.
+
+Every money column is also bounded. `fare_amount` must be above 0 and at most
+1,000 (`fare_not_positive`, `fare_too_high`); every other money column must be
+within ±1,000,000,000 dollars (`money_out_of_range`). The second bound is a
+technical safety limit, not a business rule: a finite value can still be too
+large for cents, for example `1e17 * 100` overflows `Int64` (largest value
+about 9.2 × 10^18), and `Float64` stops representing every cent exactly above
+about 9 × 10^13 dollars. The bound keeps every accepted amount far below both
+limits. It applies only to finite values: null and non-finite values have
+their own reason codes. In January 2025 the largest amount in any column is
+about 863,000 dollars, so this rule rejects no rows there.
+
+Together these rules guarantee that, for every accepted row, the cents
+conversion in section 4.1 succeeds, is exact to the cent, and never produces a
+null in a not-null column. A null in a nullable money column (`extra`, `mta_tax`,
+`tip_amount`, `tolls_amount`, `improvement_surcharge`, `congestion_surcharge`,
+`Airport_fee`, `cbd_congestion_fee`) is kept as null. Negative values are kept
+for every money column except `fare_amount` (section 4.1).
+
 "Invalid" timestamps cannot occur in a typed Parquet file; an unreadable file
 fails the whole run (section 9) instead of producing rows.
 
@@ -200,6 +240,7 @@ below. The accepted count is therefore expected to be equal to or slightly below
 | Condition | Handling |
 |---|---|
 | Flex Fare nulls (`passenger_count`, `RatecodeID`, `store_and_fwd_flag`, `congestion_surcharge`, `Airport_fee`) | Retained, nulls preserved, `has_missing_flex_fields = true` |
+| Null in another optional money column (`extra`, `mta_tax`, `tip_amount`, `tolls_amount`, `improvement_surcharge`, `cbd_congestion_fee`) | Retained, null preserved, no flag |
 | `PULocationID` or `DOLocationID` is 264 or 265 | Retained as Unknown / Outside of NYC, unknown-zone flag set |
 
 ### 7.3 Location ID policy (missing or unrecognized IDs)
