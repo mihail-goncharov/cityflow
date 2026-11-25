@@ -186,7 +186,7 @@ assumptions, not TLC rules (see `data_quality_findings.md`).
 | `distance_not_positive` | `trip_distance <= 0` | 0 is rejected |
 | `distance_too_high` | `trip_distance > 200` | exactly 200 is accepted |
 | `dropoff_before_pickup` | dropoff earlier than pickup | equal times are not this rule |
-| `zero_duration_with_distance` | dropoff equals pickup and `trip_distance > 0` | |
+| `zero_duration_with_distance` | duration at least 0 and under 1 second, and `trip_distance > 0` | exactly 1 second is accepted; under 1 second would be 0 in Silver's whole-second `trip_duration_seconds` |
 | `duration_too_long` | duration longer than 5 hours | exactly 5 hours is accepted |
 | `pickup_outside_month` | pickup before the first instant of the month or at/after the first instant of the next month | |
 | `missing_pickup_datetime` | pickup is null | |

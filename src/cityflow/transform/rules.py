@@ -10,6 +10,7 @@ MAX_FARE = 1000
 # and the Float64 exact-cent limit (docs/medallion.md section 7.1).
 MAX_MONEY_AMOUNT = 1_000_000_000
 MAX_DISTANCE_MILES = 200
+MIN_DURATION = timedelta(seconds=1)
 MAX_DURATION = timedelta(hours=5)
 
 MIN_LOCATION_ID = 1
@@ -77,14 +78,19 @@ def dropoff_before_pickup() -> pl.Expr:
 
 
 def zero_duration_with_distance() -> pl.Expr:
-    """True when pickup and dropoff are the same instant but the trip has distance.
+    """True when the trip lasts less than one second but has distance.
 
-    Zero distance with zero duration is not this rule; distance_not_positive
-    covers it.
+    Silver stores the duration in whole seconds, so a trip shorter than
+    MIN_DURATION (for example 500 ms) would become 0 there; it counts as zero
+    duration. A dropoff earlier than the pickup is dropoff_before_pickup, and
+    zero distance is distance_not_positive, not this rule.
     """
+    duration = pl.col(DROPOFF) - pl.col(PICKUP)
     return _finite_and(
         "trip_distance",
-        (pl.col(PICKUP) == pl.col(DROPOFF)) & (pl.col("trip_distance") > 0),
+        (duration >= pl.lit(timedelta(0)))
+        & (duration < pl.lit(MIN_DURATION))
+        & (pl.col("trip_distance") > 0),
     )
 
 
@@ -185,11 +191,15 @@ def money_out_of_range() -> pl.Expr:
 
     Only the size matters, so a large negative amount is out of range too;
     exactly MAX_MONEY_AMOUNT is accepted. fare_amount has its own bounds. Null
-    and non-finite values never match: they have their own reason codes.
+    and non-finite values never match: they have their own reason codes. The
+    column is cast to Float64 first, because abs() of the smallest value of an
+    integer dtype (e.g. Int32 -2,147,483,648) overflows and stays negative.
     """
     return pl.any_horizontal(
         *[
-            _finite_and(column, pl.col(column).abs() > MAX_MONEY_AMOUNT)
+            _finite_and(
+                column, pl.col(column).cast(pl.Float64).abs() > MAX_MONEY_AMOUNT
+            )
             for column in [TOTAL_AMOUNT, *OTHER_MONEY_COLUMNS]
         ]
     )

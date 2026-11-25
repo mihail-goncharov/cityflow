@@ -59,6 +59,15 @@ def test_dollars_to_cents_keeps_null_and_returns_int64() -> None:
     assert result["x"].to_list() == [None, 100]
 
 
+def test_dollars_to_cents_does_not_overflow_an_integer_source_dtype() -> None:
+    # 30,000,000 * 100 does not fit Int32; it must not wrap around.
+    df = pl.DataFrame({"x": [30_000_000, -30_000_000]}, schema={"x": pl.Int32})
+
+    result = df.select(dollars_to_cents("x"))["x"].to_list()
+
+    assert result == [3_000_000_000, -3_000_000_000]
+
+
 def test_money_columns_are_renamed_to_cents_and_dollars_are_dropped() -> None:
     silver = silver_of([trip(fare_amount=17.5, Airport_fee=1.25)])
 

@@ -29,9 +29,12 @@ def dollars_to_cents(column: str) -> pl.Expr:
     """Convert a dollar column to integer cents (``Int64``).
 
     Rounds half away from zero and keeps nulls as nulls
-    (docs/medallion.md section 4.1).
+    (docs/medallion.md section 4.1). The column is cast to ``Float64`` before
+    multiplying: in an integer source dtype such as ``Int32`` the ``* 100``
+    would overflow, and the later cast to ``Int64`` cannot undo that.
     """
-    return (pl.col(column) * 100).round(0, mode="half_away_from_zero").cast(pl.Int64)
+    dollars = pl.col(column).cast(pl.Float64)
+    return (dollars * 100).round(0, mode="half_away_from_zero").cast(pl.Int64)
 
 
 def to_silver(accepted: pl.LazyFrame) -> pl.LazyFrame:

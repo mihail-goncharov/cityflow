@@ -155,6 +155,25 @@ def test_zero_duration_with_distance_needs_equal_times_and_positive_distance() -
     ]
 
 
+def test_zero_duration_with_distance_flags_subsecond_trips() -> None:
+    # Silver keeps whole seconds, so anything under one second would become 0.
+    trips = [
+        (T0, T0 + timedelta(milliseconds=500), 3.05),
+        (T0, T0 + timedelta(microseconds=999_999), 3.05),
+        (T0, T0 + timedelta(seconds=1), 3.05),  # the minimum is accepted
+        (T0, T0 - timedelta(milliseconds=500), 3.05),  # dropoff_before_pickup's
+        (T0, T0 + timedelta(milliseconds=500), 0.0),  # distance rule's job
+    ]
+
+    assert evaluate_trips(zero_duration_with_distance(), trips) == [
+        True,
+        True,
+        False,
+        False,
+        False,
+    ]
+
+
 def test_duration_too_long_accepts_exactly_five_hours() -> None:
     five_hours = timedelta(hours=5)
     trips = [
@@ -302,6 +321,17 @@ def test_money_out_of_range_flags_each_money_column(column: str) -> None:
     assert result["hit"].to_list() == [
         True, False, False, False, True, True, False, False, False,
     ]
+
+
+def test_money_out_of_range_handles_integer_columns_without_overflow() -> None:
+    # abs() of Int32's smallest value overflows in Int32 and stays negative.
+    frame = money_frame("total_amount", [1.0, 1.0]).with_columns(
+        pl.Series("extra", [-(2**31), 30_000_000], dtype=pl.Int32)
+    )
+
+    result = frame.select(money_out_of_range().alias("hit"))
+
+    assert result["hit"].to_list() == [True, False]
 
 
 def test_money_out_of_range_does_not_apply_to_fare_amount() -> None:

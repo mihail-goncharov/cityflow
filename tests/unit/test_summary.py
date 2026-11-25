@@ -7,6 +7,7 @@ import pytest
 
 from cityflow.transform.bronze import to_bronze
 from cityflow.transform.reasons import RejectReason
+from cityflow.transform.rules import OTHER_MONEY_COLUMNS
 from cityflow.transform.split import split_accepted_rejected
 from cityflow.transform.summary import (
     FLAG_COLUMNS,
@@ -165,6 +166,8 @@ def test_summary_of_a_real_split_adds_up_to_bronze() -> None:
         "DOLocationID": pl.Int32,
         "trip_distance": pl.Float64,
         "fare_amount": pl.Float64,
+        "total_amount": pl.Float64,
+        **dict.fromkeys(OTHER_MONEY_COLUMNS, pl.Float64),
     }
 
     def trip(**overrides: Any) -> dict[str, Any]:
@@ -175,6 +178,8 @@ def test_summary_of_a_real_split_adds_up_to_bronze() -> None:
             "DOLocationID": 236,
             "trip_distance": 3.2,
             "fare_amount": 17.5,
+            "total_amount": 25.0,
+            **dict.fromkeys(OTHER_MONEY_COLUMNS, 1.0),
         }
         row.update(overrides)
         return row
