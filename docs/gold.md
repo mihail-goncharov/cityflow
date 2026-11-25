@@ -155,18 +155,44 @@ of losing it in the zone join.
 
 ## 7. Reading Silver from RustFS
 
-*To verify.* Two options, tried in this order:
+**Decision: DuckDB reads RustFS directly.** Verified on 2026-11-25 through the
+SSH tunnel (README, section 4).
+
+Two options were considered:
 
 1. **DuckDB reads RustFS directly** with the `httpfs` extension and an S3
    secret built from the `S3_*` variables (path-style URLs, endpoint through
-   the SSH tunnel).
+   the SSH tunnel). **Chosen.**
 2. **Stage locally:** download the month's Silver file with the existing
    `S3StorageAdapter`, then point `CITYFLOW_SILVER_ROOT` at the local folder.
+   Not needed.
 
-Option 2 has one advantage: it can check the Silver manifest is `published` and
-verify the file's SHA-256 before the build, as the transform does for Raw.
-Option 1 would read whatever object is at the key. The chosen option and the
-reason will be recorded here.
+How it is set up: `dbt/profiles.yml` has a second target, `rustfs`, that loads
+`httpfs` and creates the S3 secret from `S3_ACCESS_KEY`, `S3_SECRET_KEY` and
+`S3_ENDPOINT_URL` (the endpoint's scheme decides SSL). The default target,
+`dev`, has no S3 settings, so fixture builds and CI need no credentials. The
+real run uses `--target rustfs` with
+`CITYFLOW_SILVER_ROOT=s3://<bucket>/silver/nyc_tlc/yellow_taxi`.
+
+What was checked:
+
+- A direct read of January 2025 returned 3,251,195 rows, the `row_count` of
+  the Silver manifest (`publication_status: published`) and the
+  `accepted_rows` of the quality summary.
+- A search of `dbt/target/`, `dbt/logs/` and the build output for the
+  access key and secret key found neither.
+
+Why option 1: it works, it needs no extra code, and DuckDB reads only the
+columns a query uses (Parquet over HTTP range requests), so the tunnel is not
+a bottleneck (section 11).
+
+The trade-off: option 2 could check that the Silver manifest is `published` and
+verify the file's SHA-256 before the build. Option 1 reads whatever object is
+at the key. This is acceptable because Silver is replaced only by the
+transform's publication steps (`medallion.md` section 8), and the
+reconciliation tests (section 5) check that the marts agree with the file that
+was actually read. Run Gold after the transform has finished, not while it is
+publishing.
 
 
 ## 8. Output interface

@@ -1,8 +1,30 @@
 cityflow:
   target: dev
   outputs:
+    # Default: reads local Silver files, such as the test fixture. Needs no
+    # credentials, so it is the target used in CI.
     dev:
       type: duckdb
       # Relative to the directory dbt is run from (the repository root).
       path: "{{ env_var('CITYFLOW_DUCKDB_PATH', 'dbt/cityflow.duckdb') }}"
       threads: 2
+
+    # Reads published Silver straight from RustFS (docs/gold.md section 7).
+    # Use with --target rustfs and CITYFLOW_SILVER_ROOT=s3://<bucket>/silver/nyc_tlc/yellow_taxi.
+    # Credentials come only from the S3_* variables used by ingestion; they are
+    # passed to DuckDB as a secret and never written to the project or target/.
+    rustfs:
+      type: duckdb
+      path: "{{ env_var('CITYFLOW_DUCKDB_PATH', 'dbt/cityflow.duckdb') }}"
+      threads: 2
+      extensions:
+        - httpfs
+      secrets:
+        - type: s3
+          key_id: "{{ env_var('S3_ACCESS_KEY') }}"
+          secret: "{{ env_var('S3_SECRET_KEY') }}"
+          # DuckDB wants host:port without the scheme, for example 127.0.0.1:9000.
+          endpoint: "{{ env_var('S3_ENDPOINT_URL').split('://')[-1].rstrip('/') }}"
+          use_ssl: "{{ env_var('S3_ENDPOINT_URL').startswith('https://') }}"
+          url_style: path
+          region: us-east-1
