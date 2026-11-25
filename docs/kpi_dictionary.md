@@ -1,6 +1,6 @@
 # KPI dictionary
 
-**Status:** draft for AB#5. Every metric in the Gold marts
+**Status:** implemented for AB#5. Every metric in the Gold marts
 ([`gold.md`](gold.md), section 3) is defined here. A metric that is not in this
 document must not appear in a mart.
 
@@ -93,7 +93,7 @@ All metrics are computed from Silver ([`medallion.md`](medallion.md), section
 | | |
 |---|---|
 | Meaning | Average metered fare per trip. |
-| SQL | `sum(fare_amount_cents) / count(*)`, rounded to whole cents, half away from zero |
+| SQL | `sum(fare_amount_cents) / count(*)`, rounded to whole cents, half away from zero, with integer arithmetic only: `sign(s) * ((2 * abs(s) + n) // (2 * n))` where `s` is the fare sum and `n` the trip count (`//` is integer division). For 2,001 cents over 2 trips this gives 1,001. |
 | Input | `fare_amount_cents` |
 | Type, unit | `BIGINT`, US cents |
 | Denominator | `trip_count` of the same row |

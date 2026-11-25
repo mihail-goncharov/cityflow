@@ -1,7 +1,7 @@
 # Gold layer: DuckDB and dbt marts
 
-**Status:** draft, written for AB#5 before the models. Sections marked
-*To verify* are decided only after a test run.
+**Status:** implemented for AB#5. The models, tests and the January 2025
+build described here are in `dbt/` and were run on 2026-11-25.
 
 Gold turns Silver trips into small, documented tables (marts) for the
 dashboard (EPIC-07). It builds on [`medallion.md`](medallion.md), which defines
@@ -15,18 +15,26 @@ every Silver row is an accepted trip and is counted.
 ## 1. Layers and models
 
 ```
-Silver Parquet ──► stg_silver_trips ──┬──► mart_daily_trips
-                                      ├──► mart_hourly_demand
-taxi_zone_lookup.csv ──► dim_zone ────┴──► mart_pickup_zone_daily
+Silver Parquet ──► stg_silver_trips ──┬──────────────────────────────► mart_daily_trips
+                                      ├──────────────────────────────► mart_hourly_demand
+                                      └──► int_trips_with_pickup_zone ──► mart_pickup_zone_daily
+taxi_zone_lookup.csv ──► dim_zone ──────────────┘
 ```
 
-| dbt folder | Model | Role |
-|---|---|---|
-| `models/staging` | `stg_silver_trips` | Selects and renames the Silver columns Gold uses, for the configured months. One row per Silver row. No filtering. |
-| `models/staging` | `dim_zone` | One row per `LocationID` from the zone lookup seed. |
-| `models/intermediate` | `int_trips_with_pickup_zone` | Trips joined with the pickup zone. Used by the zone mart. |
-| `models/marts` | the three marts | Aggregates, section 3. |
-| `seeds` | `taxi_zone_lookup` | The official TLC zone file, section 4. |
+| dbt folder | Model | Type | Role |
+|---|---|---|---|
+| `models/staging` | `stg_silver_trips` | view | Selects and renames the Silver columns Gold uses, for the configured months. One row per Silver row. No filtering. |
+| `models/staging` | `dim_zone` | view | One row per `LocationID` from the zone lookup seed. |
+| `models/intermediate` | `int_trips_with_pickup_zone` | view | Trips joined with the pickup zone on the ID (left join). Used by the zone mart. |
+| `models/marts` | the three marts | table | Aggregates, section 3. |
+| `seeds` | `taxi_zone_lookup` | table | The official TLC zone file, section 4. |
+
+- **Silver is read in one place.** `stg_silver_trips` reads
+  `read_parquet({{ silver_paths() }})` itself instead of through a dbt
+  `source`, because a source definition cannot call a project macro, and the
+  `silver_paths` macro checks `source_months` (format, no repeated month). No
+  other model reads Silver; the reconciliation tests (section 5) read it
+  again on purpose, to stay independent of staging.
 
 - **Multiplicity is kept.** Identical-looking trips are separate Silver rows
   with different `source_row_id`s, so each one is counted. No model uses
@@ -100,12 +108,20 @@ Metric definitions, units and rounding: [`kpi_dictionary.md`](kpi_dictionary.md)
 
 | What | How |
 |---|---|
-| Mart keys are unique and not null | dbt `unique` / `not_null` tests (combined keys as one expression) |
-| `dim_zone.location_id` is unique, and 264 and 265 exist with their TLC labels (not null) | dbt tests |
-| Every trip's pickup ID has a zone | `relationships` test from `stg_silver_trips` to `dim_zone`. A missing match fails the build instead of disappearing. |
-| Joins keep the trip count | Singular test: row count of `int_trips_with_pickup_zone` equals `stg_silver_trips` |
-| Each mart reconciles with Silver | Singular tests per mart: `sum(trip_count)` equals the Silver row count, and each exposed money total equals the Silver sum, for each month |
-| Exact metric values | dbt unit tests (`unit_tests:` in YAML) with small input rows and the exact expected output: duplicate-looking trips, unknown zones, cross-midnight trips, nullable fields and empty input |
+| Mart keys are unique and not null | `not_null` on every column; `unique` on `mart_daily_trips.pickup_date`; singular tests `mart_hourly_demand_unique_key` and `mart_pickup_zone_daily_unique_key` for the two-column keys |
+| Staging keeps every Silver row once | `not_null` on every column; singular test `stg_silver_trips_unique_row_id`: `(source_month, source_row_id)` is unique |
+| `dim_zone.location_id` is unique, and 264 and 265 exist with their TLC labels | `unique` / `not_null`; singular test `dim_zone_unknown_zone_labels` |
+| Every trip's pickup ID has a zone | `relationships` test from `stg_silver_trips` to `dim_zone`. A missing match fails the build instead of disappearing (checked with the `invalid_zone` fixture). |
+| Joins keep the trip count | Singular test `int_trips_with_pickup_zone_keeps_trip_count`: row count of `int_trips_with_pickup_zone` equals `stg_silver_trips` |
+| Each mart reconciles with Silver | Singular tests `mart_*_reconciles_with_silver`: per `source_month`, `sum(trip_count)` equals the Silver row count and each exposed money total equals the Silver sum. Silver is read straight from the Parquet files, not through staging. |
+| Exact metric values | dbt unit tests (`models/marts/_unit_tests.yml`, `models/intermediate/_unit_tests.yml`): duplicate-looking trips, a negative total, rounding of every average including the 1,000.5 tie, unknown zones 264 and 265, a join on the ID where two zones share a name, a trip whose zone is missing, and empty input |
+| Rebuilding is repeatable | `tests/integration/test_gold_rebuild.py` (pytest): builds the fixture twice and compares the marts; then builds an empty fixture into the same database and checks that no row is left over |
+
+The marts only group by Silver's `pickup_date` and `pickup_hour`, so a unit test
+cannot show which date a cross-midnight trip belongs to. That is checked on
+the fixture (trip 3 lands on 1 January, hour 23) and by the reconciliation
+tests. Nullable Silver columns (the Flex Fare fields) are not read by Gold;
+fixture trip 4 has them null and is counted like any other trip.
 
 **Fixtures.** Unit tests define their input rows in YAML. A full `dbt build` in
 CI reads a small Silver Parquet fixture, so CI needs neither RustFS credentials
@@ -197,24 +213,209 @@ publishing.
 
 ## 8. Output interface
 
-*Draft.* The marts are persistent tables in the DuckDB file at
-`CITYFLOW_DUCKDB_PATH`. Another developer or the dashboard can open the file
-read-only and query them. Publishing Gold as Parquet to RustFS is left to the
-orchestration epic (EPIC-06), which lists "Gold publication" as a step.
+The output is a **DuckDB file**: `dbt/cityflow.duckdb` by default, or the path
+in `CITYFLOW_DUCKDB_PATH`. It is ignored by Git (`*.duckdb`) and is replaced
+on every build (section 6).
+
+| Object | Type | Query it? |
+|---|---|---|
+| `mart_daily_trips`, `mart_hourly_demand`, `mart_pickup_zone_daily` | table | **Yes.** This is the interface. The tables hold their data, so the file can be queried with nothing else: no RustFS, no credentials, no dbt. |
+| `taxi_zone_lookup` | table | Yes, but join to `dim_zone` labels through the marts instead. |
+| `stg_silver_trips`, `int_trips_with_pickup_zone` | view | No. They read Silver whenever they are queried, so after a `rustfs` build they need the tunnel and the `S3_*` variables. |
+| `dim_zone` | view | Possible (it reads the seed table), but the zone mart already carries the zone labels. |
+
+- Open the file **read-only** (`read_only=True` in Python, `-readonly` in the
+  DuckDB CLI). DuckDB lets only one process write to a file, and a build
+  fails while another program holds it open for writing.
+- Column meanings and units: `dbt/models/marts/_marts.yml` and
+  [`kpi_dictionary.md`](kpi_dictionary.md). Money is in integer cents.
+- Publishing Gold as Parquet to RustFS is left to the orchestration epic
+  (EPIC-06), which lists "Gold publication" as a step.
 
 
 ## 9. Commands
 
-*Added with the dbt project.* Setup, `dbt build` for fixtures and for January
-2025, and where the output appears.
+All commands run from the repository root. `--project-dir dbt --profiles-dir dbt`
+is needed on every dbt command: without it dbt looks for `profiles.yml` in
+`~/.dbt` and stops with `Invalid value for '--profiles-dir'`. Examples use
+Bash; in PowerShell set a variable with `$env:NAME = "value"` on its own line
+first.
+
+**Setup** (once):
+
+```bash
+uv sync --locked
+```
+
+**Build on the fixture** (no RustFS, no credentials; the same check CI runs).
+Use its own database file, so it does not replace the January marts:
+
+```bash
+uv run python -m cityflow.gold.fixture dbt/target/fixture
+CITYFLOW_SILVER_ROOT=dbt/target/fixture/silver/nyc_tlc/yellow_taxi \
+CITYFLOW_DUCKDB_PATH=dbt/target/fixture.duckdb \
+  uv run dbt build --project-dir dbt --profiles-dir dbt
+```
+
+It ends with `Done. PASS=83 WARN=0 ERROR=0`. `dbt/target/` is ignored by Git
+and is removed by `dbt clean`.
+
+**Build January 2025 from RustFS.** Open the SSH tunnel (README, section 4)
+and keep it open. `S3_*` come from `.env`; replace `<bucket>` with the value of
+`S3_BUCKET`:
+
+```bash
+CITYFLOW_SILVER_ROOT=s3://<bucket>/silver/nyc_tlc/yellow_taxi \
+  uv run --env-file .env dbt build --target rustfs --project-dir dbt --profiles-dir dbt
+```
+
+The marts are written to `dbt/cityflow.duckdb`. The Silver month must be
+published first (`python -m cityflow.transform --month 2025-01`, README
+section 6).
+
+**Other months.** List them in `source_months`; the build replaces the marts
+with all listed months (section 6). Each month must be published in Silver,
+otherwise `stg_silver_trips` fails and names the missing file (checked with
+local files: `IO Error: No files found that match the pattern
+".../year=2025/month=02/yellow_tripdata.parquet"`):
+
+```bash
+... dbt build --target rustfs --project-dir dbt --profiles-dir dbt \
+  --vars '{source_months: ["2025-01", "2025-02"]}'
+```
+
+**Unit tests only.** They use the rows typed in their YAML, not Silver, but dbt
+reads column types from the built models, so run them after a build on the
+same database (on an empty database they fail with a `Compilation Error`):
+
+```bash
+CITYFLOW_SILVER_ROOT=dbt/target/fixture/silver/nyc_tlc/yellow_taxi \
+CITYFLOW_DUCKDB_PATH=dbt/target/fixture.duckdb \
+  uv run dbt test --select "test_type:unit" --project-dir dbt --profiles-dir dbt
+```
+
+The rebuild test runs with the rest of the Python tests (`uv run pytest -q`), or
+alone with `uv run pytest tests/integration/test_gold_rebuild.py`. It takes
+about 40 seconds because it runs `dbt build` four times.
+
+**Errors you may see:**
+
+| Message | Cause |
+|---|---|
+| `Invalid value for '--profiles-dir': Path '...\.dbt' does not exist` | `--project-dir dbt --profiles-dir dbt` is missing |
+| `Env var required but not provided: 'CITYFLOW_SILVER_ROOT'` | the variable is not set in this terminal |
+| `Env var required but not provided: 'S3_ACCESS_KEY'` | `--target rustfs` without `--env-file .env` |
+| an HTTP or connection error from DuckDB | the SSH tunnel is not open |
+| `IO Error: No files found that match the pattern` | wrong `CITYFLOW_SILVER_ROOT`, or the month is not published (seen with local files; from RustFS the wording may differ) |
 
 
 ## 10. Example queries
 
-*Added with the marts.*
+Open the file read-only and query the marts, for example from Python:
+
+```bash
+uv run python -c "
+import duckdb
+con = duckdb.connect('dbt/cityflow.duckdb', read_only=True)
+for row in con.execute('select * from mart_daily_trips order by pickup_date limit 3').fetchall():
+    print(row)
+"
+```
+
+The results below are from the January 2025 build (section 11).
+
+**Daily trips** (money in cents):
+
+```sql
+select pickup_date, trip_count, total_fare_cents, total_charged_cents,
+       avg_trip_distance_miles, avg_trip_duration_seconds
+from mart_daily_trips
+order by pickup_date;
+```
+
+| pickup_date | trip_count | total_fare_cents | total_charged_cents | avg_trip_distance_miles | avg_trip_duration_seconds |
+|---|---|---|---|---|---|
+| 2025-01-01 | 80,966 | 163,643,406 | 231,296,086 | 3.96 | 898.9 |
+| 2025-01-02 | 80,604 | 163,330,129 | 237,530,643 | 3.73 | 974.7 |
+| 2025-01-03 | 87,007 | 165,931,775 | 243,819,954 | 3.42 | 933.6 |
+
+**Busiest hours of the day over the month.** The average is computed from the
+totals, not by averaging `avg_fare_cents`, which would weight every hour the
+same:
+
+```sql
+select pickup_hour,
+       sum(trip_count) as trips,
+       round(sum(total_fare_cents) / sum(trip_count) / 100, 2) as avg_fare_dollars
+from mart_hourly_demand
+group by pickup_hour
+order by trips desc
+limit 3;
+```
+
+| pickup_hour | trips | avg_fare_dollars |
+|---|---|---|
+| 18 | 236,387 | 16.51 |
+| 17 | 229,160 | 17.44 |
+| 15 | 204,338 | 18.74 |
+
+**Top pickup zones**, leaving out 264 (Unknown) and 265 (Outside of NYC)
+explicitly:
+
+```sql
+select pickup_location_id, pickup_zone, pickup_borough, sum(trip_count) as trips
+from mart_pickup_zone_daily
+where not is_unknown_pickup_zone
+group by pickup_location_id, pickup_zone, pickup_borough
+order by trips desc
+limit 5;
+```
+
+| pickup_location_id | pickup_zone | pickup_borough | trips |
+|---|---|---|---|
+| 161 | Midtown Center | Manhattan | 161,254 |
+| 237 | Upper East Side South | Manhattan | 157,918 |
+| 236 | Upper East Side North | Manhattan | 149,664 |
+| 132 | JFK Airport | Queens | 134,724 |
+| 230 | Times Sq/Theatre District | Manhattan | 118,206 |
+
+**Month totals**, to compare with the Silver manifest and quality summary:
+
+```sql
+select source_month, sum(trip_count) as trips,
+       sum(total_fare_cents) as fare_cents, sum(total_charged_cents) as charged_cents
+from mart_daily_trips
+group by source_month;
+```
+
+| source_month | trips | fare_cents | charged_cents |
+|---|---|---|---|
+| 2025-01 | 3,251,195 | 5,836,819,199 | 8,718,399,248 |
 
 
 ## 11. Observed January 2025 build
 
-*Added after the real run:* runtime and peak memory on the development VM
-(budget 8 GB), measured like `medallion.md` section 9.1.
+Measured on 2026-11-25 on a Windows development machine, reading Silver from
+RustFS through the SSH tunnel (section 7), like `medallion.md` section 9.1. It
+was not measured on the VM itself.
+
+| Measure | Value |
+|---|---|
+| Result | `dbt build --target rustfs`: 83 of 83 pass (1 seed, 6 models, 64 data tests, 12 unit tests) |
+| Runtime | 31 to 32 s for the build, in two runs from an empty database |
+| Peak memory | about 400 MB (peak working set of the Python process running dbt and DuckDB; about 120 MB of it is Python and dbt before the build starts) |
+| Output | `dbt/cityflow.duckdb`, 2.4 MB: 31 daily rows, 744 hourly rows (every hour of January has trips), 7,216 zone rows |
+
+- Peak memory is about 5% of the VM's 8 GB budget.
+- The marts hold 3,251,195 trips, the Silver manifest's `row_count`, and
+  8,209 of them have an unknown pickup zone, the `is_unknown_pickup_zone`
+  count of the quality summary.
+- How it was measured: dbt ran inside one Python process (`dbtRunner`), and
+  the process's peak working set was read with the Windows API
+  (`GetProcessMemoryInfo`). Starting dbt as a separate process and measuring
+  that does not work on Windows with uv: the virtual environment's
+  `python.exe` is a launcher that starts the real interpreter as another
+  process.
+- The build reads Silver many times (the staging views are read by each model
+  and test that uses them), and still takes about 30 seconds, because DuckDB
+  fetches only the columns each query needs.

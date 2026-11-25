@@ -206,6 +206,32 @@ and the comparison with the baseline in `docs/medallion.md` (section 7.6).
 Schemas, quality rules, units, the time zone assumption and paths are in
 [`docs/medallion.md`](docs/medallion.md).
 
+### 7. Gold marts (dbt and DuckDB)
+
+Transform the month first (section 6). Then, with the tunnel open, build the
+Gold marts from Silver in RustFS (replace `<bucket>` with `S3_BUCKET`):
+
+```
+CITYFLOW_SILVER_ROOT=s3://<bucket>/silver/nyc_tlc/yellow_taxi \
+  uv run --env-file .env dbt build --target rustfs --project-dir dbt --profiles-dir dbt
+```
+
+dbt reads Silver directly from RustFS and writes three tables to
+`dbt/cityflow.duckdb`: `mart_daily_trips` (per pickup date),
+`mart_hourly_demand` (per date and hour) and `mart_pickup_zone_daily` (per date
+and pickup zone). Every build replaces them from all months in `source_months`
+(default `["2025-01"]`). Open the file read-only to query them; no RustFS
+access is needed for that.
+
+The same build runs on a small fixture without RustFS or credentials, which
+is what the tests and CI use. For January 2025 the build passes all 83 checks
+in about 30 seconds with a peak of about 400 MB of memory, and the marts
+reconcile exactly with Silver (3,251,195 trips).
+
+Configuration, commands for the fixture, other months, example queries and
+the measured run are in [`docs/gold.md`](docs/gold.md); every metric is defined
+in [`docs/kpi_dictionary.md`](docs/kpi_dictionary.md).
+
 ## Tests and coverage
 
 Install development dependencies with `uv sync --locked`, then run:
@@ -351,3 +377,8 @@ evening rush hour.
   reruns, the quality summary, and the January 2025 result with runtime and
   memory, with a
   [sample quality summary](docs/examples/quality_summary_2025-01.json).
+- [`docs/gold.md`](docs/gold.md): Gold runbook, covering the dbt models,
+  configuration, tests, reading Silver from RustFS, the output interface,
+  commands, example queries and the January 2025 build.
+- [`docs/kpi_dictionary.md`](docs/kpi_dictionary.md): every Gold metric, with
+  its SQL, unit, grain, rounding and limitations.
