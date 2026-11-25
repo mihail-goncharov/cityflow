@@ -1,0 +1,46 @@
+version: 2
+
+sources:
+  - name: silver
+    description: >
+      Published Silver from the transform (AB#4, docs/medallion.md section 4):
+      one Parquet file per month, accepted trips only, money in integer cents,
+      with pickup_date, pickup_hour, trip_duration_seconds, flags and lineage.
+      Gold reads it, never writes it.
+    tables:
+      - name: yellow_trips
+        description: >
+          Silver trips for every month in the source_months var. The files are
+          <CITYFLOW_SILVER_ROOT>/year=<YYYY>/month=<MM>/yellow_tripdata.parquet
+          (docs/medallion.md section 2): a local folder for the fixture, or
+          s3://<bucket>/silver/nyc_tlc/yellow_taxi for RustFS. Every listed file
+          must exist, so a missing month fails the build instead of being
+          skipped. The months are checked by check_source_months(), which every
+          reader of this source calls first (stg_silver_trips and the
+          reconciliation tests).
+        config:
+          # A source cannot call a project macro, so the path list is built here
+          # with a Jinja loop. Only var() and env_var() are available in this file.
+          external_location: >-
+            read_parquet([{% for month in var('source_months') %}'{{ env_var('CITYFLOW_SILVER_ROOT').rstrip('/') }}/year={{ month[:4] }}/month={{ month[5:] }}/yellow_tripdata.parquet'{{ ', ' if not loop.last }}{% endfor %}])
+        columns:
+          - name: source_row_id
+            description: Zero-based row position in the Raw file. With source_month, the key of a trip.
+          - name: source_month
+            description: Month the trip was ingested for, YYYY-MM.
+          - name: pickup_date
+            description: Pickup date in New York local time.
+          - name: pickup_hour
+            description: Pickup hour, 0 to 23.
+          - name: PULocationID
+            description: Pickup TLC taxi zone ID.
+          - name: is_unknown_pickup_zone
+            description: True when PULocationID is 264 or 265.
+          - name: trip_distance
+            description: Trip distance in miles.
+          - name: trip_duration_seconds
+            description: Dropoff time minus pickup time, in whole seconds.
+          - name: fare_amount_cents
+            description: Metered fare in integer US cents.
+          - name: total_amount_cents
+            description: Total amount charged to passengers in integer US cents. Can be negative.

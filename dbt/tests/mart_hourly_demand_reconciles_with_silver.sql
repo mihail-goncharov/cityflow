@@ -3,13 +3,15 @@
 -- stg_silver_trips, so a mistake in staging cannot make both sides wrong in the
 -- same way. A row in the result is a month whose totals differ, or a month that
 -- exists on only one side. avg_fare_cents is not reconciled: it is rounded.
+{%- do check_source_months() %}
+
 with silver as (
 
     select
         source_month,
         count(*) as trip_count,
         sum(fare_amount_cents)::bigint as total_fare_cents
-    from read_parquet({{ silver_paths() }})
+    from {{ source('silver', 'yellow_trips') }}
     group by source_month
 
 ),

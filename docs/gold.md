@@ -29,12 +29,18 @@ taxi_zone_lookup.csv ──► dim_zone ─────────────�
 | `models/marts` | the three marts | table | Aggregates, section 3. |
 | `seeds` | `taxi_zone_lookup` | table | The official TLC zone file, section 4. |
 
-- **Silver is read in one place.** `stg_silver_trips` reads
-  `read_parquet({{ silver_paths() }})` itself instead of through a dbt
-  `source`, because a source definition cannot call a project macro, and the
-  `silver_paths` macro checks `source_months` (format, no repeated month). No
-  other model reads Silver; the reconciliation tests (section 5) read it
-  again on purpose, to stay independent of staging.
+- **Silver is a dbt source.** `models/staging/_sources.yml` declares
+  `silver.yellow_trips`; its location is a `read_parquet([...])` list with one
+  file per month in `source_months`, built with a Jinja loop from
+  `CITYFLOW_SILVER_ROOT` (a source definition can use `var()` and `env_var()`
+  but cannot call a project macro). `stg_silver_trips` is the only model that
+  reads it. The reconciliation tests (section 5) read it too, on purpose, to
+  stay independent of staging.
+- **The months are checked before Silver is read.** Everything that reads the
+  source (`stg_silver_trips` and the reconciliation tests, which can be run on
+  their own) first calls the `check_source_months()` macro, which stops on an empty
+  list, a month that is not `YYYY-MM`, or a month listed twice (which would
+  read the same file twice and double-count its trips).
 
 - **Multiplicity is kept.** Identical-looking trips are separate Silver rows
   with different `source_row_id`s, so each one is counted. No model uses
@@ -60,7 +66,8 @@ from environment variables or dbt variables:
 
 The Silver path for a month is built from the root, in the same layout as
 `medallion.md` section 2:
-`<CITYFLOW_SILVER_ROOT>/year=2025/month=01/yellow_tripdata.parquet`.
+`<CITYFLOW_SILVER_ROOT>/year=2025/month=01/yellow_tripdata.parquet`. The
+`silver` source (section 1) builds one such path per month.
 
 
 ## 3. Marts
@@ -305,7 +312,8 @@ about 40 seconds because it runs `dbt build` four times.
 | `Invalid value for '--profiles-dir': Path '...\.dbt' does not exist` | `--project-dir dbt --profiles-dir dbt` is missing |
 | `Env var required but not provided: 'CITYFLOW_SILVER_ROOT'` | the variable is not set in this terminal |
 | `Env var required but not provided: 'S3_ACCESS_KEY'` | `--target rustfs` without `--env-file .env` |
-| an HTTP or connection error from DuckDB | the SSH tunnel is not open |
+| `IO Error: Could not connect to server error for HTTP HEAD to 'http://127.0.0.1:9000/...'` | the SSH tunnel is not open |
+| `source_months lists 2025-01 more than once`, `source_months must be YYYY-MM`, `source_months must list at least one month` | a bad `--vars` value, stopped by `check_source_months()` before Silver is read |
 | `IO Error: No files found that match the pattern` | wrong `CITYFLOW_SILVER_ROOT`, or the month is not published (seen with local files; from RustFS the wording may differ) |
 
 

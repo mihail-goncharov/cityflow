@@ -6,14 +6,16 @@
     trusts Silver (docs/medallion.md section 7), so every row is an accepted
     trip and is counted.
 
-    Silver is read here rather than through a dbt source, because a source
-    cannot call the silver_paths() macro. This model is the only place Gold
-    reads Silver.
+    Silver comes from the silver.yellow_trips source (models/staging/_sources.yml),
+    which lists one file per month in source_months. The months are checked
+    first: a bad or repeated month stops the build here.
 -#}
+
+{%- do check_source_months() %}
 
 with silver as (
 
-    select * from read_parquet({{ silver_paths() }})
+    select * from {{ source('silver', 'yellow_trips') }}
 
 )
 
