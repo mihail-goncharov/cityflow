@@ -313,6 +313,7 @@ about 40 seconds because it runs `dbt build` four times.
 | `Env var required but not provided: 'CITYFLOW_SILVER_ROOT'` | the variable is not set in this terminal |
 | `Env var required but not provided: 'S3_ACCESS_KEY'` | `--target rustfs` without `--env-file .env` |
 | `IO Error: Could not connect to server error for HTTP HEAD to 'http://127.0.0.1:9000/...'` | the SSH tunnel is not open |
+| `HTTP 400 Bad Request`, `InvalidBucketName: The specified bucket is not valid` | `<bucket>` in `CITYFLOW_SILVER_ROOT` was not replaced with the value of `S3_BUCKET`. The hint about the S3 region in the same message is misleading: the region is fine. |
 | `source_months lists 2025-01 more than once`, `source_months must be YYYY-MM`, `source_months must list at least one month` | a bad `--vars` value, stopped by `check_source_months()` before Silver is read |
 | `IO Error: No files found that match the pattern` | wrong `CITYFLOW_SILVER_ROOT`, or the month is not published (seen with local files; from RustFS the wording may differ) |
 
